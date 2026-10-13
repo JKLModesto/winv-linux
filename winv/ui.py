@@ -4,6 +4,7 @@ Estilização inspirada no Fluent Design do Windows 11, frameless, cantos arredo
 suporte a Dual-Monitor e baixa latência através de pré-carregamento.
 """
 
+import subprocess
 from typing import Optional, List
 import gi
 gi.require_version("Gtk", "3.0")
@@ -123,6 +124,7 @@ class ClipboardFlyoutWindow(Gtk.Window):
         self.target_xid: Optional[int] = None
         self.target_wm_class: str = "Unknown"
         self._current_items: List[ClipboardItem] = []
+        self._can_close_on_focus_out: bool = False
 
         self._setup_window_properties()
         self._setup_css()
@@ -132,12 +134,14 @@ class ClipboardFlyoutWindow(Gtk.Window):
         self.hide()
 
     def _setup_window_properties(self):
-        """Configura a janela como popup frameless Always-On-Top."""
+        """Configura a janela como popup frameless Always-On-Top com foco ativo."""
         self.set_decorated(False)
         self.set_skip_taskbar_hint(True)
         self.set_skip_pager_hint(True)
         self.set_keep_above(True)
-        self.set_type_hint(Gdk.WindowTypeHint.POPUP_MENU)
+        self.set_type_hint(Gdk.WindowTypeHint.DIALOG)
+        self.set_can_focus(True)
+        self.set_focus_on_map(True)
         self.set_default_size(POPUP_WIDTH, POPUP_MAX_HEIGHT)
         self.set_name("winv-popup")
         self.get_style_context().add_class("winv-popup")
@@ -185,6 +189,7 @@ class ClipboardFlyoutWindow(Gtk.Window):
         self.search_entry.set_placeholder_text("Pesquisar no histórico...")
         self.search_entry.get_style_context().add_class("search-entry")
         self.search_entry.connect("changed", self._on_search_changed)
+        self.search_entry.connect("activate", self._on_search_activate)
         header_box.pack_start(self.search_entry, False, False, 0)
         root_box.pack_start(header_box, False, False, 0)
 
@@ -205,8 +210,14 @@ class ClipboardFlyoutWindow(Gtk.Window):
         query = entry.get_text().strip()
         self.refresh_items(search_query=query)
 
+    def _on_search_activate(self, entry):
+        """Ao pressionar Enter na busca, cola o primeiro item filtrado imediatamente."""
+        if self._current_items:
+            self.execute_paste(self._current_items[0])
+
     def _on_focus_out(self, widget, event):
-        self.hide()
+        if getattr(self, "_can_close_on_focus_out", False):
+            self.hide()
         return True
 
     def _on_key_press(self, widget, event):
@@ -260,9 +271,10 @@ class ClipboardFlyoutWindow(Gtk.Window):
         self.move(int(target_x), int(target_y))
 
     def show_flyout(self, target_xid: Optional[int], target_wm_class: str):
-        """Abre o flyout instantaneamente com os itens atualizados."""
+        """Abre o flyout instantaneamente com os itens atualizados e foco na busca."""
         self.target_xid = target_xid
         self.target_wm_class = target_wm_class
+        self._can_close_on_focus_out = False
 
         self.search_entry.set_text("")
         self.refresh_items()
@@ -270,7 +282,39 @@ class ClipboardFlyoutWindow(Gtk.Window):
 
         self.show_all()
         self.present()
+
+        # Força o foco de digitação na caixa de busca imediatamente
+        self._activate_focus()
+
+        # Permite fechamento por perda de foco após estabilização do foco inicial
+        def _enable_focus_out():
+            self._can_close_on_focus_out = True
+            return False
+
+        GLib.timeout_add(200, _enable_focus_out)
+
+    def _activate_focus(self):
+        """Garante que a janela ganhe o foco do X11 e a entrada de texto comece ativa."""
         self.search_entry.grab_focus()
+
+        gdk_win = self.get_window()
+        if gdk_win and hasattr(gdk_win, "get_xid"):
+            try:
+                xid = gdk_win.get_xid()
+                subprocess.Popen(
+                    ["xdotool", "windowactivate", "--sync", str(xid)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+            except Exception:
+                pass
+
+        def _refocus():
+            if self.get_visible():
+                self.search_entry.grab_focus()
+            return False
+
+        GLib.timeout_add(40, _refocus)
 
     def refresh_items(self, search_query: str = ""):
         """Recria os cards da lista com base nos itens do storage."""
