@@ -4,7 +4,8 @@
 # ==============================================================================
 set -e
 
-VERSION="1.0.0"
+# Lê dinamicamente a versão configurada no código
+VERSION=$(python3 -c "from winv.config import VERSION; print(VERSION)" 2>/dev/null || echo "1.0.0")
 PKG_NAME="winv-linux"
 ARCH="all"
 DIST_DIR="dist"
@@ -24,12 +25,12 @@ mkdir -p "${BUILD_DIR}/usr/bin"
 mkdir -p "${BUILD_DIR}/usr/share/${PKG_NAME}"
 mkdir -p "${BUILD_DIR}/usr/lib/systemd/user"
 mkdir -p "${BUILD_DIR}/usr/share/applications"
+mkdir -p "${BUILD_DIR}/etc/xdg/autostart"
 mkdir -p "${BUILD_DIR}/DEBIAN"
 
 echo "[3/6] Copiando arquivos do projeto..."
 # Código Python em /usr/share/winv-linux/winv
 cp -r winv/ "${BUILD_DIR}/usr/share/${PKG_NAME}/"
-# Remove possíveis caches de bytecode
 find "${BUILD_DIR}/usr/share/${PKG_NAME}" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
 # Executável CLI em /usr/bin/winv-linux
@@ -68,6 +69,20 @@ StartupNotify=false
 EOF
 chmod 644 "${BUILD_DIR}/usr/share/applications/winv-linux.desktop"
 
+# Configuração automática do atalho Super+V no autostart do usuário (/etc/xdg/autostart/)
+# Garante que qualquer novo login registre o atalho automaticamente
+cat <<'EOF' > "${BUILD_DIR}/etc/xdg/autostart/winv-linux-shortcut.desktop"
+[Desktop Entry]
+Type=Application
+Name=winv-linux Shortcut Auto-Config
+Comment=Garante a configuração automática do atalho Super+V no desktop do usuário
+Exec=/usr/bin/winv-linux --setup-shortcut
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+EOF
+chmod 644 "${BUILD_DIR}/etc/xdg/autostart/winv-linux-shortcut.desktop"
+
 echo "[4/6] Gerando arquivo de controle e metadados (DEBIAN/control)..."
 cat <<EOF > "${BUILD_DIR}/DEBIAN/control"
 Package: ${PKG_NAME}
@@ -80,8 +95,8 @@ Maintainer: Pedro Modesto <pedrogabrielmodesto@gmail.com>
 Homepage: https://github.com/JKLModesto/winv-linux
 Description: Experiencia nativa do Win+V com Engenharia Reversa.
  Gerenciador de area de transferencia ultra-rapido (<10ms) para Linux X11,
- com abas persistentes, cofre criptografado (AES-256-GCM + Scrypt)
- e verificador de atualizacoes automatico integrado ao GitHub Releases.
+ com abas persistentes, cofre criptografado (AES-256-GCM + Scrypt),
+ configuracao automatica de atalhos e verificador de atualizacoes GitHub.
 EOF
 
 echo "[5/6] Gerando scripts de pós-instalação e pré-remoção..."
@@ -89,24 +104,71 @@ cat <<'EOF' > "${BUILD_DIR}/DEBIAN/postinst"
 #!/bin/bash
 set -e
 
-# Habilita o serviço de usuário globalmente
+# 1. Habilita o serviço de usuário globalmente
 systemctl --global enable winv-linux.service 2>/dev/null || true
 
-# Notifica e reinicia o serviço para sessões ativas com UID >= 1000
+# 2. Função auxiliar para configurar o atalho Super+V na sessão gráfica ativa do usuário
+setup_user_shortcut_now() {
+    local u_name="$1"
+    local u_uid="$2"
+    local u_bus="/run/user/${u_uid}/bus"
+    local u_runtime="/run/user/${u_uid}"
+    local u_home
+    u_home=$(getent passwd "$u_name" | cut -d: -f6)
+
+    if [ -S "$u_bus" ] && [ -d "$u_runtime" ]; then
+        local u_env
+        u_env=$(systemctl --user -M "${u_uid}@" show-environment 2>/dev/null || true)
+        local u_desktop
+        u_desktop=$(echo "$u_env" | grep -E '^XDG_CURRENT_DESKTOP=' | cut -d= -f2-)
+        local u_display
+        u_display=$(echo "$u_env" | grep -E '^DISPLAY=' | cut -d= -f2-)
+        local u_xauth
+        u_xauth=$(echo "$u_env" | grep -E '^XAUTHORITY=' | cut -d= -f2-)
+
+        if [ -z "$u_xauth" ] && [ -f "$u_home/.Xauthority" ]; then
+            u_xauth="$u_home/.Xauthority"
+        fi
+
+        runuser -u "$u_name" -- env \
+            HOME="$u_home" \
+            USER="$u_name" \
+            DBUS_SESSION_BUS_ADDRESS="unix:path=$u_bus" \
+            XDG_RUNTIME_DIR="$u_runtime" \
+            XDG_CURRENT_DESKTOP="${u_desktop:-X-Cinnamon}" \
+            DISPLAY="${u_display:-:0}" \
+            XAUTHORITY="$u_xauth" \
+            /usr/bin/winv-linux --setup-shortcut 2>&1 || true
+    fi
+}
+
+# 3. Notifica e reinicia o serviço + aplica atalho para sessões ativas
+if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+    s_uid=$(id -u "$SUDO_USER" 2>/dev/null || true)
+    if [ -n "$s_uid" ]; then
+        systemctl --user -M "$s_uid@" daemon-reload 2>/dev/null || true
+        systemctl --user -M "$s_uid@" restart winv-linux.service 2>/dev/null || true
+        setup_user_shortcut_now "$SUDO_USER" "$s_uid"
+    fi
+fi
+
 if command -v loginctl >/dev/null 2>&1; then
     for uid in $(loginctl list-users --no-legend 2>/dev/null | awk '{print $1}'); do
         if [ "$uid" -ge 1000 ] 2>/dev/null; then
+            u_name=$(id -nu "$uid" 2>/dev/null || true)
             systemctl --user -M "$uid@" daemon-reload 2>/dev/null || true
             systemctl --user -M "$uid@" restart winv-linux.service 2>/dev/null || true
+            if [ -n "$u_name" ] && [ "$u_name" != "$SUDO_USER" ]; then
+                setup_user_shortcut_now "$u_name" "$uid"
+            fi
         fi
     done
 fi
 
 echo ""
 echo "================================================================"
-echo " ✅ winv-linux v1.0.0 instalado com sucesso!"
-echo " Para registrar o atalho global Super+V no seu usuário, execute:"
-echo "    winv-linux --setup-shortcut"
+echo " ✅ winv-linux instalado com sucesso!"
+echo " ⌨️  Atalho Super+V registrado e serviço systemd iniciado."
 echo "================================================================"
 echo ""
 exit 0
@@ -134,6 +196,8 @@ chmod 755 "${BUILD_DIR}/DEBIAN/prerm"
 # Ajusta permissões gerais de arquivos e pastas
 find "${BUILD_DIR}/usr" -type d -exec chmod 755 {} +
 find "${BUILD_DIR}/usr/share" -type f -exec chmod 644 {} +
+find "${BUILD_DIR}/etc" -type d -exec chmod 755 {} +
+find "${BUILD_DIR}/etc" -type f -exec chmod 644 {} +
 chmod 755 "${BUILD_DIR}/usr/bin/winv-linux"
 
 echo "[6/6] Empacotando com dpkg-deb..."

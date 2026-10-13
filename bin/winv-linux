@@ -31,8 +31,16 @@ def setup_desktop_shortcut():
     import ast
 
     de_raw = os.environ.get("XDG_CURRENT_DESKTOP", "") or os.environ.get("DESKTOP_SESSION", "")
+    if not de_raw:
+        try:
+            res = subprocess.run(["systemctl", "--user", "show-environment"], capture_output=True, text=True, timeout=2)
+            if res.returncode == 0:
+                env_dict = dict(line.split("=", 1) for line in res.stdout.splitlines() if "=" in line)
+                de_raw = env_dict.get("XDG_CURRENT_DESKTOP", "") or env_dict.get("DESKTOP_SESSION", "")
+        except Exception:
+            pass
     de = de_raw.lower()
-    cmd = "winv-linux"
+    cmd = "/usr/bin/winv-linux" if Path("/usr/bin/winv-linux").is_file() else (shutil.which("winv-linux") or "winv-linux")
     name = "winv-linux"
 
     print(f"Configurando atalho Super+V para o desktop: {de_raw or 'Detectando'}...")
@@ -48,14 +56,55 @@ def setup_desktop_shortcut():
                     cur_list = ast.literal_eval(res.stdout.strip())
                 except Exception:
                     cur_list = []
-            if "custom-winv" not in cur_list:
-                cur_list.append("custom-winv")
-                subprocess.run(["gsettings", "set", cin_mk, "custom-list", str(cur_list)], check=True)
-            p = "/org/cinnamon/desktop/keybindings/custom-keybindings/custom-winv/"
-            subprocess.run(["dconf", "write", f"{p}name", f"'{name}'"], check=True)
-            subprocess.run(["dconf", "write", f"{p}command", f"'{cmd}'"], check=True)
-            subprocess.run(["dconf", "write", f"{p}binding", "['<Super>v']"], check=True)
-            print("✅ Atalho Super+V configurado com sucesso no Cinnamon!")
+
+            # Limpa entradas inválidas anteriores (como custom-winv)
+            if "custom-winv" in cur_list:
+                cur_list = [x for x in cur_list if x != "custom-winv"]
+                subprocess.run(["dconf", "reset", "-f", "/org/cinnamon/desktop/keybindings/custom-keybindings/custom-winv/"], capture_output=True)
+
+            # Localiza se já existe um customN para o winv-linux, ou acha o menor índice livre
+            target_entry = None
+            used_indices = set()
+            for entry in cur_list:
+                if entry == "__dummy__":
+                    continue
+                try:
+                    num = int(entry.replace("custom", ""))
+                    used_indices.add(num)
+                    epath = f"/org/cinnamon/desktop/keybindings/custom-keybindings/{entry}/"
+                    eschema = f"{cin_mk}.custom-keybinding:{epath}"
+                    cmd_res = subprocess.run(["gsettings", "get", eschema, "command"], capture_output=True, text=True)
+                    name_res = subprocess.run(["gsettings", "get", eschema, "name"], capture_output=True, text=True)
+                    if "winv-linux" in cmd_res.stdout or "winv-linux" in name_res.stdout:
+                        target_entry = entry
+                except Exception:
+                    pass
+
+            if not target_entry:
+                i = 0
+                while i in used_indices:
+                    i += 1
+                target_entry = f"custom{i}"
+
+            # Configura propriedades ANTES de atualizar a custom-list
+            epath = f"/org/cinnamon/desktop/keybindings/custom-keybindings/{target_entry}/"
+            eschema = f"{cin_mk}.custom-keybinding:{epath}"
+            subprocess.run(["gsettings", "set", eschema, "name", f"'{name}'"], check=True)
+            subprocess.run(["gsettings", "set", eschema, "command", f"'{cmd}'"], check=True)
+            subprocess.run(["gsettings", "set", eschema, "binding", "['<Super>v']"], check=True)
+
+            if target_entry not in cur_list:
+                cur_list.append(target_entry)
+
+            # Técnica oficial do Cinnamon Settings para forçar o recarregamento imediato:
+            # Altera a custom-list alternando o elemento dummy
+            if "__dummy__" in cur_list:
+                cur_list.remove("__dummy__")
+            else:
+                cur_list.append("__dummy__")
+
+            subprocess.run(["gsettings", "set", cin_mk, "custom-list", str(cur_list)], check=True)
+            print(f"✅ Atalho Super+V configurado com sucesso no Cinnamon ({target_entry})!")
             return True
         except Exception as e:
             print(f"Aviso Cinnamon: {e}")
@@ -71,9 +120,9 @@ def setup_desktop_shortcut():
             gnome_mk = "org.gnome.settings-daemon.plugins.media-keys"
             gnome_path = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/winv/"
             s = f"{gnome_mk}.custom-keybinding:{gnome_path}"
-            subprocess.run(["gsettings", "set", s, "name", name], capture_output=True)
-            subprocess.run(["gsettings", "set", s, "command", cmd], capture_output=True)
-            subprocess.run(["gsettings", "set", s, "binding", "<Super>v"], capture_output=True)
+            subprocess.run(["gsettings", "set", s, "name", f"'{name}'"], capture_output=True)
+            subprocess.run(["gsettings", "set", s, "command", f"'{cmd}'"], capture_output=True)
+            subprocess.run(["gsettings", "set", s, "binding", "'<Super>v'"], capture_output=True)
             res = subprocess.run(["gsettings", "get", gnome_mk, "custom-keybindings"], capture_output=True, text=True)
             cur_list = []
             if res.returncode == 0:
