@@ -47,6 +47,45 @@ window.winv-popup {
     border-color: #0078d4;
 }
 
+.update-banner {
+    background-color: rgba(255, 185, 0, 0.12);
+    border: 1px solid rgba(255, 185, 0, 0.35);
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin-top: 6px;
+}
+.update-label {
+    font-size: 11px;
+    font-weight: 500;
+    color: #ffd24d;
+}
+.update-btn {
+    font-size: 11px;
+    font-weight: 600;
+    color: #ffffff;
+    background-color: rgba(255, 185, 0, 0.25);
+    border: 1px solid rgba(255, 185, 0, 0.45);
+    border-radius: 4px;
+    padding: 2px 8px;
+    box-shadow: none;
+}
+.update-btn:hover {
+    background-color: rgba(255, 185, 0, 0.45);
+    color: #ffffff;
+}
+.update-dismiss-btn {
+    font-size: 10px;
+    color: #ffd24d;
+    background: transparent;
+    border: none;
+    padding: 2px 4px;
+    border-radius: 4px;
+}
+.update-dismiss-btn:hover {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.08);
+}
+
 .cards-scroller {
     padding: 8px 10px;
 }

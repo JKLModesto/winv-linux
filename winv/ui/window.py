@@ -14,6 +14,7 @@ from ..config import (
     POPUP_WIDTH,
     POPUP_MAX_HEIGHT,
     SCREEN_PADDING,
+    GITHUB_REPO,
 )
 from ..models import ClipboardItem
 from ..storage import HybridStorage
@@ -30,12 +31,13 @@ from .popovers import PopoversMixin
 class ClipboardFlyoutWindow(Gtk.Window, TabBarMixin, CardsMixin, PopoversMixin):
     """Janela Flyout de histórico de área de transferência rápida e frameless."""
 
-    def __init__(self, storage: HybridStorage, x11_helper: X11Helper, monitor, tabs: TabManager):
+    def __init__(self, storage: HybridStorage, x11_helper: X11Helper, monitor, tabs: TabManager, updater=None):
         super().__init__(type=Gtk.WindowType.TOPLEVEL)
         self.storage = storage
         self.x11_helper = x11_helper
         self.monitor = monitor
         self.tabs = tabs
+        self.updater = updater
 
         self.target_xid: Optional[int] = None
         self.target_wm_class: str = "Unknown"
@@ -44,6 +46,7 @@ class ClipboardFlyoutWindow(Gtk.Window, TabBarMixin, CardsMixin, PopoversMixin):
         self.active_tab: Optional[str] = HISTORY_TAB
         self._open_popover: Optional[Gtk.Popover] = None
         self._status_timer: Optional[int] = None
+        self._current_update_url: Optional[str] = None
         self._drag_state = {
             "tab_id": None,
             "widget": None,
@@ -149,6 +152,32 @@ class ClipboardFlyoutWindow(Gtk.Window, TabBarMixin, CardsMixin, PopoversMixin):
         self.search_entry.connect("changed", self._on_search_changed)
         self.search_entry.connect("activate", self._on_search_activate)
         header_box.pack_start(self.search_entry, False, False, 0)
+
+        # Banner de Notificação de Atualização (GitHub Releases)
+        self.update_revealer = Gtk.Revealer()
+        self.update_revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
+        self.update_revealer.set_transition_duration(200)
+
+        update_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        update_box.get_style_context().add_class("update-banner")
+
+        self.update_label = Gtk.Label(label="")
+        self.update_label.get_style_context().add_class("update-label")
+        self.update_label.set_xalign(0.0)
+        update_box.pack_start(self.update_label, True, True, 0)
+
+        self.update_btn = Gtk.Button(label="Baixar")
+        self.update_btn.get_style_context().add_class("update-btn")
+        self.update_btn.connect("clicked", self._on_update_clicked)
+        update_box.pack_end(self.update_btn, False, False, 0)
+
+        dismiss_btn = Gtk.Button(label="✕")
+        dismiss_btn.get_style_context().add_class("update-dismiss-btn")
+        dismiss_btn.connect("clicked", lambda b: self.update_revealer.set_reveal_child(False))
+        update_box.pack_end(dismiss_btn, False, False, 0)
+
+        self.update_revealer.add(update_box)
+        header_box.pack_start(self.update_revealer, False, False, 0)
         root_box.pack_start(header_box, False, False, 0)
 
         # 2. Lista Rolável de Cards
@@ -302,6 +331,17 @@ class ClipboardFlyoutWindow(Gtk.Window, TabBarMixin, CardsMixin, PopoversMixin):
         self._rebuild_tab_bar()
         self.search_entry.set_text("")
         self.refresh_items()
+
+        # Checagem instantânea em memória de atualização disponível (zero latência)
+        if self.updater and self.updater.update_info and self.updater.update_info.get("available"):
+            info = self.updater.update_info
+            latest_v = info.get("latest_version", "")
+            self.update_label.set_text(f"🚀 Nova versão {latest_v} disponível!")
+            self._current_update_url = info.get("download_url") or info.get("url")
+            self.update_revealer.set_reveal_child(True)
+        else:
+            self.update_revealer.set_reveal_child(False)
+
         self.position_at_pointer()
 
         self.show_all()
@@ -316,6 +356,16 @@ class ClipboardFlyoutWindow(Gtk.Window, TabBarMixin, CardsMixin, PopoversMixin):
             return False
 
         GLib.timeout_add(200, _enable_focus_out)
+
+    def _on_update_clicked(self, btn):
+        """Abre a página do release ou o instalador no navegador padrão e fecha o flyout."""
+        self.hide()
+        url = self._current_update_url or f"https://github.com/{GITHUB_REPO}/releases"
+        import webbrowser
+        try:
+            webbrowser.open(url)
+        except Exception:
+            subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def _activate_focus(self):
         """Garante que a janela ganhe o foco do X11 e a entrada de texto comece ativa."""

@@ -8,6 +8,11 @@ import os
 import getpass
 from pathlib import Path
 
+# Versão do software e metadados de release
+VERSION = "1.0.0"
+GITHUB_REPO = "JKLModesto/winv-linux"
+GITHUB_API_RELEASES_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+
 # Limites extraídos de cbdhsvc.dll
 MAX_BUFFER_ITEMS = 25
 MAX_ITEM_SIZE_BYTES = 4 * 1024 * 1024  # 4 MB (4.194.304 bytes)

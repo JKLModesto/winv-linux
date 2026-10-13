@@ -122,12 +122,14 @@ winv-linux/
 │   │   ├── popovers.py           # Menus, criação de abas e desbloqueio de cofre
 │   │   ├── styles.py             # Folhas de estilo CSS
 │   │   └── constants.py          # Constantes da interface
+│   ├── updater.py                # Verificador assíncrono de updates (GitHub Releases)
 │   ├── ipc.py                    # Unix Domain Socket (< 10ms de latência)
 │   └── daemon.py                 # Orquestrador do processo em background
 ├── bin/
 │   └── winv-linux                # Script executável CLI
 ├── systemd/
 │   └── winv-linux.service        # Definição do serviço do usuário systemd
+├── build_deb.sh                  # Construtor do pacote instalador oficial .deb
 ├── install.sh                    # Instalador universal (Mint, Ubuntu, Zorin...)
 └── README.md                     # Este documento
 ```

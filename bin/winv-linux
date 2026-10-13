@@ -13,26 +13,126 @@ from pathlib import Path
 # Adiciona o diretório raiz ou de instalação ao sys.path para permitir imports do pacote winv
 CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parent
-for candidate in [PROJECT_ROOT, Path.home() / ".local" / "share" / "winv-linux"]:
+for candidate in [
+    Path("/usr/share/winv-linux"),
+    PROJECT_ROOT,
+    Path.home() / ".local" / "share" / "winv-linux",
+]:
     if (candidate / "winv").is_dir() and str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
 from winv.ipc import send_command
 from winv.daemon import main as run_daemon
 
+
+def setup_desktop_shortcut():
+    """Registra o atalho global Super+V no ambiente gráfico ativo do usuário."""
+    import shutil
+    import ast
+
+    de_raw = os.environ.get("XDG_CURRENT_DESKTOP", "") or os.environ.get("DESKTOP_SESSION", "")
+    de = de_raw.lower()
+    cmd = "winv-linux"
+    name = "winv-linux"
+
+    print(f"Configurando atalho Super+V para o desktop: {de_raw or 'Detectando'}...")
+
+    # 1. Cinnamon
+    if "cinnamon" in de or shutil.which("cinnamon-session"):
+        try:
+            cin_mk = "org.cinnamon.desktop.keybindings"
+            res = subprocess.run(["gsettings", "get", cin_mk, "custom-list"], capture_output=True, text=True)
+            cur_list = []
+            if res.returncode == 0:
+                try:
+                    cur_list = ast.literal_eval(res.stdout.strip())
+                except Exception:
+                    cur_list = []
+            if "custom-winv" not in cur_list:
+                cur_list.append("custom-winv")
+                subprocess.run(["gsettings", "set", cin_mk, "custom-list", str(cur_list)], check=True)
+            p = "/org/cinnamon/desktop/keybindings/custom-keybindings/custom-winv/"
+            subprocess.run(["dconf", "write", f"{p}name", f"'{name}'"], check=True)
+            subprocess.run(["dconf", "write", f"{p}command", f"'{cmd}'"], check=True)
+            subprocess.run(["dconf", "write", f"{p}binding", "['<Super>v']"], check=True)
+            print("✅ Atalho Super+V configurado com sucesso no Cinnamon!")
+            return True
+        except Exception as e:
+            print(f"Aviso Cinnamon: {e}")
+
+    # 2. GNOME / Ubuntu / Zorin
+    if "gnome" in de or "unity" in de or "zorin" in de or shutil.which("gnome-shell"):
+        try:
+            # Libera Super+V do notification tray
+            subprocess.run(
+                ["gsettings", "set", "org.gnome.shell.keybindings", "toggle-message-tray", "['<Super>m']"],
+                capture_output=True
+            )
+            gnome_mk = "org.gnome.settings-daemon.plugins.media-keys"
+            gnome_path = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/winv/"
+            s = f"{gnome_mk}.custom-keybinding:{gnome_path}"
+            subprocess.run(["gsettings", "set", s, "name", name], capture_output=True)
+            subprocess.run(["gsettings", "set", s, "command", cmd], capture_output=True)
+            subprocess.run(["gsettings", "set", s, "binding", "<Super>v"], capture_output=True)
+            res = subprocess.run(["gsettings", "get", gnome_mk, "custom-keybindings"], capture_output=True, text=True)
+            cur_list = []
+            if res.returncode == 0:
+                try:
+                    cur_list = ast.literal_eval(res.stdout.strip())
+                except Exception:
+                    cur_list = []
+            if gnome_path not in cur_list:
+                cur_list.append(gnome_path)
+                subprocess.run(["gsettings", "set", gnome_mk, "custom-keybindings", str(cur_list)], capture_output=True)
+            print("✅ Atalho Super+V configurado com sucesso no GNOME!")
+            return True
+        except Exception as e:
+            print(f"Aviso GNOME: {e}")
+
+    # 3. MATE
+    if "mate" in de:
+        try:
+            p = "/org/mate/desktop/keybindings/winv/"
+            subprocess.run(["dconf", "write", f"{p}name", f"'{name}'"], check=True)
+            subprocess.run(["dconf", "write", f"{p}action", f"'{cmd}'"], check=True)
+            subprocess.run(["dconf", "write", f"{p}binding", "'<Mod4>v'"], check=True)
+            print("✅ Atalho Super+V configurado com sucesso no MATE!")
+            return True
+        except Exception as e:
+            print(f"Aviso MATE: {e}")
+
+    # 4. XFCE
+    if "xfce" in de:
+        try:
+            subprocess.run(
+                ["xfconf-query", "-c", "xfce4-keyboard-shortcuts", "-p", "/commands/custom/<Super>v", "-n", "-t", "string", "-s", cmd],
+                capture_output=True
+            )
+            print("✅ Atalho Super+V configurado com sucesso no XFCE!")
+            return True
+        except Exception as e:
+            print(f"Aviso XFCE: {e}")
+
+    print("⚠️ Ambiente não reconhecido automaticamente. Crie um atalho personalizado:")
+    print(f"   Comando: {cmd}  |  Tecla: Super+V")
+    return False
+
+
 def print_help():
     print("""Uso: winv-linux [OPÇÃO]
 
 Opções:
-  (sem argumentos)  Alterna a exibição do popup de histórico (Toggle)
-  --popup, --toggle Alterna a exibição do popup (Toggle)
-  --show            Força a abertura do popup
-  --hide            Oculta o popup
-  --clear           Limpa os itens não-fixados do histórico
-  --daemon          Inicia o processo daemon em background
-  --status          Verifica se o daemon está em execução
-  --help            Exibe esta mensagem de ajuda
+  (sem argumentos)   Alterna a exibição do popup de histórico (Toggle)
+  --popup, --toggle  Alterna a exibição do popup (Toggle)
+  --show             Força a abertura do popup
+  --hide             Oculta o popup
+  --clear            Limpa os itens não-fixados do histórico
+  --daemon           Inicia o processo daemon em background
+  --status           Verifica se o daemon está em execução
+  --setup-shortcut   Registra o atalho global Super+V no ambiente gráfico atual
+  --help             Exibe esta mensagem de ajuda
 """)
+
 
 def main():
     args = sys.argv[1:]
@@ -78,6 +178,9 @@ def main():
         else:
             print("winv-linux daemon: INATIVO")
 
+    elif cmd == "--setup-shortcut":
+        setup_desktop_shortcut()
+
     elif cmd in ("--help", "-h"):
         print_help()
 
@@ -85,6 +188,7 @@ def main():
         print(f"Opção desconhecida: {cmd}")
         print_help()
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
