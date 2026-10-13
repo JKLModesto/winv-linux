@@ -1,5 +1,5 @@
 """
-Daemon principal do winv-mint
+Daemon principal do winv-linux
 Orquestra o monitor de clipboard, armazenamento híbrido, interface GTK pré-carregada e IPC
 """
 
@@ -20,7 +20,7 @@ class WinVDaemon:
     def __init__(self):
         ensure_directories()
 
-        print("[Daemon] Inicializando subsistemas winv-mint...")
+        print("[Daemon] Inicializando subsistemas winv-linux...")
         self.storage = HybridStorage()
         self.x11_helper = X11Helper()
 
@@ -88,7 +88,7 @@ class WinVDaemon:
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
 
-        print("[Daemon] winv-mint em execução com sucesso.")
+        print("[Daemon] winv-linux em execução com sucesso.")
         try:
             Gtk.main()
         except KeyboardInterrupt:

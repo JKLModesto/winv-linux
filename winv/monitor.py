@@ -25,7 +25,7 @@ class ClipboardMonitor:
         self.clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
         
         # Filtro Anti-Loop (ExcludeClipboardContentFromMonitorProcessing)
-        # Armazena hashes de itens colocados no clipboard pelo próprio winv-mint
+        # Armazena hashes de itens colocados no clipboard pelo próprio winv-linux
         self._internal_paste_hashes: Set[str] = set()
         self._lock = threading.Lock()
 

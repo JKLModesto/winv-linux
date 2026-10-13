@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-CLI entry point para winv-mint
+CLI entry point para winv-linux
 Acionado pelo atalho global Super+V para abrir o popup instantaneamente
 ou executado com --daemon pelo systemd.
 """
@@ -13,7 +13,7 @@ from pathlib import Path
 # Adiciona o diretório raiz ou de instalação ao sys.path para permitir imports do pacote winv
 CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parent
-for candidate in [PROJECT_ROOT, Path.home() / ".local" / "share" / "winv-mint"]:
+for candidate in [PROJECT_ROOT, Path.home() / ".local" / "share" / "winv-linux"]:
     if (candidate / "winv").is_dir() and str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
@@ -21,7 +21,7 @@ from winv.ipc import send_command
 from winv.daemon import main as run_daemon
 
 def print_help():
-    print("""Uso: winv-mint [OPÇÃO]
+    print("""Uso: winv-linux [OPÇÃO]
 
 Opções:
   (sem argumentos)  Alterna a exibição do popup de histórico (Toggle)
@@ -41,8 +41,8 @@ def main():
         # Tenta enviar o comando para o daemon existente
         if not send_command("TOGGLE"):
             # Se o daemon não estiver ativo, avisa o usuário ou inicia
-            print("[winv-mint] Daemon não está em execução. Iniciando em background...")
-            subprocess.Popen([sys.executable, str(CURRENT_DIR / "winv-mint"), "--daemon"])
+            print("[winv-linux] Daemon não está em execução. Iniciando em background...")
+            subprocess.Popen([sys.executable, str(CURRENT_DIR / "winv-linux"), "--daemon"])
             # Tenta novamente após breve intervalo
             import time
             time.sleep(0.4)
@@ -53,14 +53,14 @@ def main():
 
     if cmd == "--daemon":
         if send_command("PING"):
-            print("winv-mint daemon já está em execução.")
+            print("winv-linux daemon já está em execução.")
             return
         run_daemon()
         return
 
     elif cmd == "--show":
         if not send_command("SHOW"):
-            print("Erro: Daemon winv-mint não está em execução.")
+            print("Erro: Daemon winv-linux não está em execução.")
             sys.exit(1)
 
     elif cmd == "--hide":
@@ -70,13 +70,13 @@ def main():
         if send_command("CLEAR"):
             print("Histórico volátil limpo com sucesso.")
         else:
-            print("Erro: Daemon winv-mint não está em execução.")
+            print("Erro: Daemon winv-linux não está em execução.")
 
     elif cmd == "--status":
         if send_command("PING"):
-            print("winv-mint daemon: ATIVO (Respondendo)")
+            print("winv-linux daemon: ATIVO (Respondendo)")
         else:
-            print("winv-mint daemon: INATIVO")
+            print("winv-linux daemon: INATIVO")
 
     elif cmd in ("--help", "-h"):
         print_help()

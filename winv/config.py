@@ -1,5 +1,5 @@
 """
-Configurações e constantes do subsistema winv-mint
+Configurações e constantes do subsistema winv-linux
 Espelhando com fidelidade as constantes extraídas da engenharia reversa do Windows
 (cbdhsvc.dll e SuggestionUIUndocked.dll)
 """
@@ -23,7 +23,7 @@ PINNED_METADATA_FILE = PINNED_DIR / "metadata.json"
 
 # Socket IPC para acionamento instantâneo via Super+V
 UID = os.getuid() if hasattr(os, "getuid") else 1000
-SOCKET_PATH = Path(f"/tmp/winv-mint-{UID}.sock")
+SOCKET_PATH = Path(f"/tmp/winv-linux-{UID}.sock")
 
 # Dimensões da Interface Gráfica
 POPUP_WIDTH = 380

@@ -1,4 +1,4 @@
-# 📋 winv-mint: Windows `Win + V` Clipboard Experience for Linux Mint
+# 📋 winv-linux: Windows `Win + V` Clipboard Experience for Linux
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Linux%20Mint%20%28Cinnamon%20%2F%20X11%29-green.svg)]()
@@ -14,7 +14,7 @@
 
 Este projeto não é apenas "mais um gerenciador de clipboard". Ele replica a arquitetura interna e as regras de negócio exatas que a Microsoft emprega no subsistema do `Win + V`:
 
-| Comportamento do Windows (`cbdhsvc.dll` / `SuggestionUIUndocked.dll`) | Implementação no `winv-mint` |
+| Comportamento do Windows (`cbdhsvc.dll` / `SuggestionUIUndocked.dll`) | Implementação no `winv-linux` |
 | :--- | :--- |
 | **Limite Circular:** Buffer em RAM com no máximo 25 itens (`maxBufferItemsCount`). | Buffer FIFO estrito de 25 itens não-fixados em memória RAM. |
 | **Limite de Tamanho:** Rejeita payloads acima de 4 MB (`maxHistoryItemSizeInBytes`). | Verificação de integridade limitando cada item a 4 MB. |
@@ -29,24 +29,24 @@ Para detalhes aprofundados com diagramas Mermaid e tabelas de símbolos, consult
 
 ---
 
-## 🚀 Instalação Rápida no Linux Mint (Quick Start)
+## 🚀 Instalação Rápida (Mint, Ubuntu, Zorin) (Quick Start)
 
 Clone o repositório e execute o script de instalação automatizada:
 
 ```bash
-git clone https://github.com/pedro/winv-mint.git
-cd winv-mint
-chmod +x install_mint.sh
-./install_mint.sh
+git clone https://github.com/pedro/winv-linux.git
+cd winv-linux
+chmod +x install.sh
+./install.sh
 ```
 
 ### O que o instalador faz automaticamente:
 1. Instala as dependências nativas via `apt` (`python3-gi`, `gir1.2-gtk-3.0`, `gir1.2-wnck-3.0`, `xdotool`, `x11-utils`, `python3-xlib`).
-2. Copia os binários para `~/.local/bin/winv-mint` e bibliotecas para `~/.local/share/winv-mint/`.
-3. Cria, ativa e inicia o serviço de usuário no systemd (`systemctl --user enable --now winv-mint.service`).
-4. **Registra automaticamente o atalho global `Super + V`** nas configurações do Cinnamon (`org.cinnamon.desktop.keybindings`).
+2. Copia os binários para `~/.local/bin/winv-linux` e bibliotecas para `~/.local/share/winv-linux/`.
+3. Cria, ativa e inicia o serviço de usuário no systemd (`systemctl --user enable --now winv-linux.service`).
+4. **Registra automaticamente o atalho global `Super + V`** no seu ambiente (Cinnamon, GNOME/Zorin/Ubuntu, MATE ou XFCE).
 
-Agora basta pressionar **`Super + V`** (a tecla Windows + V) em qualquer lugar do seu Linux Mint! 🎉
+Agora basta pressionar **`Super + V`** (a tecla Windows + V) em qualquer lugar do seu Linux! 🎉
 
 ---
 
@@ -63,20 +63,20 @@ Agora basta pressionar **`Super + V`** (a tecla Windows + V) em qualquer lugar d
 
 ## 🛠️ Comandos de Linha de Comando (CLI)
 
-Você também pode controlar o `winv-mint` pelo terminal ou em scripts:
+Você também pode controlar o `winv-linux` pelo terminal ou em scripts:
 
 ```bash
 # Alterna a visibilidade do popup (mesma ação do Super+V)
-winv-mint --popup
+winv-linux --popup
 
 # Limpa o histórico em memória (mantendo os fixados)
-winv-mint --clear
+winv-linux --clear
 
 # Verifica o status do daemon
-winv-mint --status
+winv-linux --status
 
 # Exibe a ajuda com todas as opções
-winv-mint --help
+winv-linux --help
 ```
 
 ---
@@ -84,7 +84,7 @@ winv-mint --help
 ## 📂 Estrutura do Repositório
 
 ```text
-winv-mint/
+winv-linux/
 ├── DOCS/
 │   └── WINDOWS_CLIPBOARD_RE.md   # Especificação formal da engenharia reversa
 ├── winv/
@@ -98,10 +98,10 @@ winv-mint/
 │   ├── ipc.py                    # Unix Domain Socket (< 10ms de latência)
 │   └── daemon.py                 # Orquestrador do processo em background
 ├── bin/
-│   └── winv-mint                 # Script executável CLI
+│   └── winv-linux                 # Script executável CLI
 ├── systemd/
-│   └── winv-mint.service         # Definição do serviço do usuário systemd
-├── install_mint.sh               # Script de instalação com 1 clique
+│   └── winv-linux.service         # Definição do serviço do usuário systemd
+├── install.sh               # Instalador universal (Mint, Ubuntu, Zorin...)
 └── README.md                     # Este documento
 ```
 
@@ -109,10 +109,10 @@ winv-mint/
 
 ## 🗑️ Desinstalação (Uninstallation)
 
-Para remover completamente o `winv-mint`, parar o serviço e desvincular o atalho do teclado:
+Para remover completamente o `winv-linux`, parar o serviço e desvincular o atalho do teclado:
 
 ```bash
-./install_mint.sh --uninstall
+./install.sh --uninstall
 ```
 
 ---
