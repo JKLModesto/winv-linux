@@ -1,8 +1,6 @@
 [Unit]
 Description=winv-mint - Windows Win+V Clipboard History Daemon for Linux Mint
 Documentation=https://github.com/pedro/winv-mint
-After=graphical-session.target
-PartOf=graphical-session.target
 
 [Service]
 Type=simple

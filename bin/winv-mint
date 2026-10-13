@@ -52,6 +52,9 @@ def main():
     cmd = args[0]
 
     if cmd == "--daemon":
+        if send_command("PING"):
+            print("winv-mint daemon já está em execução.")
+            return
         run_daemon()
         return
 
