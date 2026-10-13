@@ -120,8 +120,10 @@ window.winv-popup {
     -gtk-icon-shadow: none;
 }
 
-.tab-bar {
-    margin-top: 4px;
+.tab-bar scrolledwindow scrollbar {
+    min-width: 0;
+    min-height: 0;
+    opacity: 0;
 }
 .tab-btn {
     font-size: 11px;
@@ -129,16 +131,28 @@ window.winv-popup {
     background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
-    border-radius: 0;
-    padding: 3px 8px;
+    border-radius: 4px 4px 0 0;
+    padding: 4px 10px;
     box-shadow: none;
+    transition: background-color 100ms ease, border-color 100ms ease;
 }
 .tab-btn:hover {
     color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.04);
 }
 .tab-btn.tab-active {
     color: #ffffff;
     border-bottom-color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.06);
+}
+.tab-btn.tab-dragging {
+    opacity: 0.55;
+    background-color: rgba(255, 255, 255, 0.12);
+    border-bottom-color: #ffffff;
+}
+.tab-btn.tab-drag-hover {
+    background-color: rgba(255, 255, 255, 0.14);
+    border-bottom-color: rgba(255, 255, 255, 0.6);
 }
 .status-label {
     font-size: 10px;
@@ -178,9 +192,21 @@ popover {
     background-color: rgba(255, 255, 255, 0.14);
     color: #ffffff;
 }
+.form-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #cccccc;
+    margin-top: 6px;
+    margin-bottom: 2px;
+}
 .error-label {
-    font-size: 10px;
-    color: #e0e0e0;
+    font-size: 11px;
+    color: #ff6b6b;
+    font-weight: 500;
+    margin-top: 4px;
+}
+popover entry, popover entry text {
+    color: #ffffff;
 }
 .unlock-box {
     padding: 30px 20px;
@@ -196,18 +222,21 @@ popover {
     color: #8e8e8e;
     margin-bottom: 12px;
 }
-.primary-btn {
-    background-color: #0078d4;
-    color: #ffffff;
+.form-btn {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: #e0e0e0;
     font-size: 12px;
-    font-weight: bold;
+    font-weight: 500;
     border-radius: 6px;
-    border: none;
+    border: 1px solid rgba(255, 255, 255, 0.14);
     padding: 6px 12px;
-    margin-top: 4px;
+    margin-top: 6px;
+    box-shadow: none;
 }
-.primary-btn:hover {
-    background-color: #1084d9;
+.form-btn:hover {
+    background-color: rgba(255, 255, 255, 0.16);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.25);
 }
 .checkbox-label {
     font-size: 11px;
@@ -235,6 +264,11 @@ class ClipboardFlyoutWindow(Gtk.Window):
         self.active_tab: Optional[str] = HISTORY_TAB
         self._open_popover: Optional[Gtk.Popover] = None
         self._status_timer: Optional[int] = None
+        self._drag_state = {
+            "tab_id": None,
+            "start_x": 0,
+            "has_dragged": False,
+        }
 
         self._setup_window_properties()
         self._setup_css()
@@ -303,15 +337,27 @@ class ClipboardFlyoutWindow(Gtk.Window):
         # Barra de abas
         tab_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
         tab_row.get_style_context().add_class("tab-bar")
-        tabs_scroller = Gtk.ScrolledWindow()
-        tabs_scroller.set_policy(Gtk.PolicyType.EXTERNAL, Gtk.PolicyType.NEVER)
-        tabs_scroller.set_propagate_natural_height(True)
+        tab_row.add_events(Gdk.EventMask.SCROLL_MASK)
+        tab_row.connect("scroll-event", self._on_tabs_scroll_event)
+
+        self.tabs_scroller = Gtk.ScrolledWindow()
+        self.tabs_scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        self.tabs_scroller.set_propagate_natural_height(True)
+        self.tabs_scroller.set_shadow_type(Gtk.ShadowType.NONE)
+        self.tabs_scroller.set_kinetic_scrolling(True)
+        self.tabs_scroller.add_events(Gdk.EventMask.SCROLL_MASK)
+        self.tabs_scroller.connect("scroll-event", self._on_tabs_scroll_event)
+
         self.tabs_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
-        tabs_scroller.add(self.tabs_box)
-        tab_row.pack_start(tabs_scroller, True, True, 0)
+        self.tabs_box.add_events(Gdk.EventMask.SCROLL_MASK)
+        self.tabs_box.connect("scroll-event", self._on_tabs_scroll_event)
+        self.tabs_scroller.add(self.tabs_box)
+        tab_row.pack_start(self.tabs_scroller, True, True, 0)
 
         self.add_tab_btn = self._make_icon_button(["list-add-symbolic"], "+")
         self.add_tab_btn.set_tooltip_text("Nova aba")
+        self.add_tab_btn.add_events(Gdk.EventMask.SCROLL_MASK)
+        self.add_tab_btn.connect("scroll-event", self._on_tabs_scroll_event)
         self.add_tab_btn.connect("clicked", lambda b: self._show_create_tab_popover())
         tab_row.pack_end(self.add_tab_btn, False, False, 0)
         header_box.pack_start(tab_row, False, False, 0)
@@ -339,6 +385,35 @@ class ClipboardFlyoutWindow(Gtk.Window):
     def _tab_order(self) -> List[Optional[str]]:
         return [HISTORY_TAB] + [t.id for t in self.tabs.list_tabs()]
 
+    def _on_tabs_scroll_event(self, widget, event):
+        """Converte qualquer scroll vertical (rodinha do mouse) em scroll horizontal super fluido sem precisar de Shift."""
+        adj = self.tabs_scroller.get_hadjustment()
+        if not adj:
+            return False
+
+        delta = 0
+        if event.direction == Gdk.ScrollDirection.UP:
+            delta = -50
+        elif event.direction == Gdk.ScrollDirection.DOWN:
+            delta = 50
+        elif event.direction == Gdk.ScrollDirection.LEFT:
+            delta = -50
+        elif event.direction == Gdk.ScrollDirection.RIGHT:
+            delta = 50
+        elif event.direction == Gdk.ScrollDirection.SMOOTH:
+            dx, dy = event.get_scroll_deltas()
+            delta = (dx + dy) * 40
+
+        if delta != 0:
+            cur = adj.get_value()
+            page = adj.get_page_size()
+            lower = adj.get_lower()
+            upper = adj.get_upper()
+            new_val = max(lower, min(upper - page, cur + delta))
+            adj.set_value(new_val)
+            return True
+        return False
+
     def _rebuild_tab_bar(self):
         for child in self.tabs_box.get_children():
             self.tabs_box.remove(child)
@@ -350,26 +425,145 @@ class ClipboardFlyoutWindow(Gtk.Window):
                 icon = "changes-prevent-symbolic" if t.locked else "changes-allow-symbolic"
             entries.append((t.id, t.name, icon))
 
+        active_btn = None
+
         for tab_id, name, icon in entries:
             btn = Gtk.Button()
             btn.set_relief(Gtk.ReliefStyle.NONE)
             btn.get_style_context().add_class("tab-btn")
+            btn.add_events(
+                Gdk.EventMask.POINTER_MOTION_MASK
+                | Gdk.EventMask.BUTTON_PRESS_MASK
+                | Gdk.EventMask.BUTTON_RELEASE_MASK
+                | Gdk.EventMask.SCROLL_MASK
+            )
+
             if tab_id == self.active_tab:
                 btn.get_style_context().add_class("tab-active")
-            inner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+                active_btn = btn
+
+            inner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
             if icon:
                 inner.pack_start(Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.MENU), False, False, 0)
+
+            # Nome cheio da aba, sem truncar
             label = Gtk.Label(label=name)
-            label.set_ellipsize(Pango.EllipsizeMode.END)
-            label.set_max_width_chars(14)
+            label.set_single_line_mode(True)
+            label.set_ellipsize(Pango.EllipsizeMode.NONE)
             inner.pack_start(label, False, False, 0)
             btn.add(inner)
-            btn.connect("clicked", lambda b, tid=tab_id: self.switch_tab(tid))
-            if tab_id is not HISTORY_TAB:
-                btn.set_tooltip_text(f"{name} — clique direito para opções")
+
+            # Rolar com mouse sobre qualquer botão
+            btn.connect("scroll-event", self._on_tabs_scroll_event)
+
+            if tab_id is HISTORY_TAB:
+                btn.connect("clicked", lambda b: self.switch_tab(HISTORY_TAB))
+            else:
+                btn.set_tooltip_text(f"{name} — arraste para reordenar (Kanban) ou clique direito para opções")
                 btn.connect("button-press-event", self._on_tab_button_press, tab_id)
+                btn.connect("motion-notify-event", self._on_tab_motion, tab_id)
+                btn.connect("button-release-event", self._on_tab_button_release, tab_id)
+
             self.tabs_box.pack_start(btn, False, False, 0)
+
         self.tabs_box.show_all()
+
+        # Rola suavemente até a aba ativa para garantir visibilidade
+        if active_btn:
+            def _scroll_to_active():
+                alloc = active_btn.get_allocation()
+                adj = self.tabs_scroller.get_hadjustment()
+                if adj and alloc.width > 0:
+                    btn_x = alloc.x
+                    btn_w = alloc.width
+                    cur_val = adj.get_value()
+                    page = adj.get_page_size()
+                    if btn_x < cur_val:
+                        adj.set_value(max(adj.get_lower(), btn_x - 12))
+                    elif (btn_x + btn_w) > (cur_val + page):
+                        adj.set_value(min(adj.get_upper() - page, btn_x + btn_w - page + 12))
+                return False
+            GLib.idle_add(_scroll_to_active)
+
+    def _on_tab_button_press(self, btn, event, tab_id):
+        if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
+            self._show_tab_menu(btn, tab_id)
+            return True
+        elif event.type == Gdk.EventType.BUTTON_PRESS and event.button == 1:
+            self._drag_state = {
+                "tab_id": tab_id,
+                "start_x": event.x_root,
+                "has_dragged": False,
+            }
+            return False
+        return False
+
+    def _on_tab_motion(self, btn, event, tab_id):
+        source_id = self._drag_state.get("tab_id")
+        if not source_id or source_id is HISTORY_TAB:
+            return False
+
+        if not (event.state & Gdk.ModifierType.BUTTON1_MASK):
+            return False
+
+        dx = abs(event.x_root - self._drag_state["start_x"])
+        if dx > 8:
+            self._drag_state["has_dragged"] = True
+            btn.get_style_context().add_class("tab-dragging")
+
+            tabs_list = [t.id for t in self.tabs.list_tabs()]
+            if source_id not in tabs_list:
+                return False
+
+            source_idx = tabs_list.index(source_id)
+            cursor_x = event.x_root
+
+            children = self.tabs_box.get_children()
+            for i, child in enumerate(children):
+                if i == 0:  # Botão Histórico
+                    win = child.get_window()
+                    if win:
+                        _, child_x = win.get_origin()
+                        alloc = child.get_allocation()
+                        if cursor_x < (child_x + alloc.width * 0.75) and source_idx > 0:
+                            self.tabs.move_tab(source_id, 0)
+                            self._rebuild_tab_bar()
+                            return True
+                    continue
+
+                child_tab_idx = i - 1
+                if child_tab_idx == source_idx:
+                    continue
+
+                win = child.get_window()
+                if not win:
+                    continue
+                _, child_x = win.get_origin()
+                alloc = child.get_allocation()
+                mid_x = child_x + (alloc.width / 2.0)
+
+                # Move em tempo real estilo Kanban
+                if child_tab_idx < source_idx and cursor_x < mid_x:
+                    self.tabs.move_tab(source_id, child_tab_idx)
+                    self._rebuild_tab_bar()
+                    return True
+                elif child_tab_idx > source_idx and cursor_x > mid_x:
+                    self.tabs.move_tab(source_id, child_tab_idx)
+                    self._rebuild_tab_bar()
+                    return True
+        return False
+
+    def _on_tab_button_release(self, btn, event, tab_id):
+        if event.button == 1:
+            had_dragged = self._drag_state.get("has_dragged", False)
+            self._drag_state = {"tab_id": None, "start_x": 0, "has_dragged": False}
+            btn.get_style_context().remove_class("tab-dragging")
+            if had_dragged:
+                return True
+            else:
+                self.switch_tab(tab_id)
+                return True
+        return False
 
     def switch_tab(self, tab_id: Optional[str]):
         if tab_id is not HISTORY_TAB and tab_id not in self._tab_order():
@@ -477,54 +671,96 @@ class ClipboardFlyoutWindow(Gtk.Window):
 
     def _show_create_tab_popover(self):
         pop, box = self._new_popover(self.add_tab_btn, "Nova aba")
-        entry = self._make_entry("Nome da aba")
+        box.set_size_request(260, -1)
+
+        # 1. Campo Nome
+        lbl_name = Gtk.Label(label="Nome da aba:")
+        lbl_name.get_style_context().add_class("form-label")
+        lbl_name.set_xalign(0.0)
+        box.pack_start(lbl_name, False, False, 0)
+
+        entry = self._make_entry("Ex: Comandos, Senhas...")
         box.pack_start(entry, False, False, 0)
 
-        # Checkbox Cofre
+        # 2. Checkbox Cofre
         check = Gtk.CheckButton(label="Proteger com senha (Cofre 🔒)")
         check.get_style_context().add_class("checkbox-label")
+        check.set_margin_top(8)
         box.pack_start(check, False, False, 0)
 
-        pwd_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        # 3. Bloco de Senha
+        pwd_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         pwd_box.set_no_show_all(True)
         pwd_box.hide()
 
-        pwd_entry = self._make_entry("Senha do cofre")
+        lbl_pwd = Gtk.Label(label="Senha do cofre:")
+        lbl_pwd.get_style_context().add_class("form-label")
+        lbl_pwd.set_xalign(0.0)
+        pwd_box.pack_start(lbl_pwd, False, False, 0)
+
+        pwd_entry = self._make_entry("Digite a senha")
         pwd_entry.set_visibility(False)
         pwd_entry.set_property("caps-lock-warning", True)
+        pwd_box.pack_start(pwd_entry, False, False, 0)
 
-        pwd_conf = self._make_entry("Confirmar senha")
+        lbl_conf = Gtk.Label(label="Confirmar senha:")
+        lbl_conf.get_style_context().add_class("form-label")
+        lbl_conf.set_xalign(0.0)
+        pwd_box.pack_start(lbl_conf, False, False, 0)
+
+        pwd_conf = self._make_entry("Repita a senha")
         pwd_conf.set_visibility(False)
         pwd_conf.set_property("caps-lock-warning", True)
-
-        pwd_box.pack_start(pwd_entry, False, False, 0)
         pwd_box.pack_start(pwd_conf, False, False, 0)
+
         box.pack_start(pwd_box, False, False, 0)
 
-        def _on_toggle_check(btn):
-            if btn.get_active():
-                pwd_box.show_all()
-            else:
-                pwd_box.hide()
-
-        check.connect("toggled", _on_toggle_check)
-
+        # 4. Mensagem de Erro
         error = Gtk.Label(label="")
         error.get_style_context().add_class("error-label")
         error.set_xalign(0.0)
         box.pack_start(error, False, False, 0)
 
+        def _set_pwd_box_visible(visible: bool):
+            if visible:
+                pwd_box.show()
+                for c in pwd_box.get_children():
+                    c.show()
+            else:
+                pwd_box.hide()
+
+        def _on_toggle_check(btn):
+            is_active = btn.get_active()
+            _set_pwd_box_visible(is_active)
+            if is_active:
+                if entry.get_text().strip():
+                    pwd_entry.grab_focus()
+                else:
+                    entry.grab_focus()
+            error.set_text("")
+            pop.queue_resize()
+
+        check.connect("toggled", _on_toggle_check)
+
         def _create():
+            error.set_text("")
             name = entry.get_text().strip()
+            if not name:
+                error.set_text("Por favor, preencha o Nome da aba.")
+                entry.grab_focus()
+                return
+
             password = None
             if check.get_active():
                 p1 = pwd_entry.get_text()
                 p2 = pwd_conf.get_text()
                 if not p1:
-                    error.set_text("A senha não pode ser vazia")
+                    error.set_text("Por favor, digite a senha do cofre.")
+                    pwd_entry.grab_focus()
                     return
                 if p1 != p2:
-                    error.set_text("As senhas não coincidem")
+                    error.set_text("As senhas digitadas não coincidem.")
+                    pwd_conf.grab_focus()
                     return
                 password = p1
 
@@ -533,14 +769,25 @@ class ClipboardFlyoutWindow(Gtk.Window):
             except (TabError, ValueError) as e:
                 error.set_text(str(e))
                 return
+
             pop.popdown()
             self.switch_tab(tab_id)
 
-        entry.connect("activate", lambda e: _create())
-        pwd_entry.connect("activate", lambda e: _create())
+        def _on_entry_activate(e):
+            if check.get_active():
+                pwd_entry.grab_focus()
+            else:
+                _create()
+
+        entry.connect("activate", _on_entry_activate)
+        pwd_entry.connect("activate", lambda e: pwd_conf.grab_focus())
         pwd_conf.connect("activate", lambda e: _create())
 
-        box.pack_start(self._make_menu_button("Criar aba", _create), False, False, 0)
+        btn_create = Gtk.Button(label="Criar aba")
+        btn_create.get_style_context().add_class("form-btn")
+        btn_create.connect("clicked", lambda b: _create())
+        box.pack_start(btn_create, False, False, 0)
+
         self._popup(pop, entry)
 
     def _on_tab_button_press(self, btn, event, tab_id):
@@ -602,6 +849,24 @@ class ClipboardFlyoutWindow(Gtk.Window):
                     self._flash_status("Cofre trancado")
 
                 box.pack_start(self._make_menu_button("Trancar cofre agora (Ctrl+L)", _lock_now), False, False, 0)
+
+        # Mover esquerda / direita
+        tabs_list = [t.id for t in self.tabs.list_tabs()]
+        cur_idx = tabs_list.index(tab_id) if tab_id in tabs_list else -1
+
+        if cur_idx > 0:
+            def _move_left():
+                self.tabs.move_tab(tab_id, cur_idx - 1)
+                pop.popdown()
+                self._rebuild_tab_bar()
+            box.pack_start(self._make_menu_button("⬅ Mover para a esquerda", _move_left), False, False, 0)
+
+        if cur_idx >= 0 and cur_idx < len(tabs_list) - 1:
+            def _move_right():
+                self.tabs.move_tab(tab_id, cur_idx + 1)
+                pop.popdown()
+                self._rebuild_tab_bar()
+            box.pack_start(self._make_menu_button("➡ Mover para a direita", _move_right), False, False, 0)
 
         box.pack_start(self._make_menu_button("Renomear", _rename_mode), False, False, 0)
         box.pack_start(self._make_menu_button("Excluir aba", _delete_confirm, danger=True), False, False, 0)
@@ -914,7 +1179,7 @@ class ClipboardFlyoutWindow(Gtk.Window):
                 err_label.set_text(f"Erro: {ex}")
 
         unlock_btn = Gtk.Button(label="Desbloquear")
-        unlock_btn.get_style_context().add_class("primary-btn")
+        unlock_btn.get_style_context().add_class("form-btn")
         unlock_btn.connect("clicked", lambda b: _do_unlock())
         pwd_entry.connect("activate", lambda e: _do_unlock())
         box.pack_start(unlock_btn, False, False, 0)
