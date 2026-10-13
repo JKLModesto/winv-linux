@@ -21,7 +21,11 @@ from .config import (
 )
 from .models import ClipboardItem, ClipboardFormat
 from .storage import HybridStorage
+from .tabs import TabManager, TabError
+from .crypto import InvalidPassword
 from .x11_helper import X11Helper
+
+HISTORY_TAB = None  # A aba Histórico é representada por None
 
 CSS_STYLES = """
 window.winv-popup {
@@ -115,19 +119,122 @@ window.winv-popup {
 .action-btn image {
     -gtk-icon-shadow: none;
 }
+
+.tab-bar {
+    margin-top: 4px;
+}
+.tab-btn {
+    font-size: 11px;
+    color: #9a9a9a;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: 3px 8px;
+    box-shadow: none;
+}
+.tab-btn:hover {
+    color: #ffffff;
+}
+.tab-btn.tab-active {
+    color: #ffffff;
+    border-bottom-color: #ffffff;
+}
+.status-label {
+    font-size: 10px;
+    color: #bdbdbd;
+    margin-right: 6px;
+}
+
+popover {
+    background-color: #2b2b2b;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+}
+.popover-box {
+    padding: 8px;
+}
+.popover-title {
+    font-size: 11px;
+    font-weight: bold;
+    color: #d0d0d0;
+}
+.menu-btn {
+    font-size: 12px;
+    color: #e0e0e0;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 8px;
+    box-shadow: none;
+}
+.menu-btn:hover {
+    background-color: rgba(255, 255, 255, 0.08);
+}
+.menu-btn:disabled {
+    color: #666666;
+}
+.danger-btn:hover {
+    background-color: rgba(255, 255, 255, 0.14);
+    color: #ffffff;
+}
+.error-label {
+    font-size: 10px;
+    color: #e0e0e0;
+}
+.unlock-box {
+    padding: 30px 20px;
+}
+.unlock-title {
+    font-size: 13px;
+    font-weight: bold;
+    color: #ffffff;
+    margin-top: 8px;
+}
+.unlock-subtitle {
+    font-size: 11px;
+    color: #8e8e8e;
+    margin-bottom: 12px;
+}
+.primary-btn {
+    background-color: #0078d4;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: bold;
+    border-radius: 6px;
+    border: none;
+    padding: 6px 12px;
+    margin-top: 4px;
+}
+.primary-btn:hover {
+    background-color: #1084d9;
+}
+.checkbox-label {
+    font-size: 11px;
+    color: #cccccc;
+}
+textview, textview text {
+    background-color: rgba(45, 45, 45, 0.9);
+    color: #ffffff;
+    font-size: 12px;
+}
 """
 
 class ClipboardFlyoutWindow(Gtk.Window):
-    def __init__(self, storage: HybridStorage, x11_helper: X11Helper, monitor):
+    def __init__(self, storage: HybridStorage, x11_helper: X11Helper, monitor, tabs: TabManager):
         super().__init__(type=Gtk.WindowType.TOPLEVEL)
         self.storage = storage
         self.x11_helper = x11_helper
         self.monitor = monitor
+        self.tabs = tabs
 
         self.target_xid: Optional[int] = None
         self.target_wm_class: str = "Unknown"
         self._current_items: List[ClipboardItem] = []
         self._can_close_on_focus_out: bool = False
+        self.active_tab: Optional[str] = HISTORY_TAB
+        self._open_popover: Optional[Gtk.Popover] = None
+        self._status_timer: Optional[int] = None
 
         self._setup_window_properties()
         self._setup_css()
@@ -182,11 +289,32 @@ class ClipboardFlyoutWindow(Gtk.Window):
         title_label.get_style_context().add_class("title-label")
         top_row.pack_start(title_label, True, True, 0)
 
-        clear_btn = Gtk.Button(label="Limpar tudo")
-        clear_btn.get_style_context().add_class("clear-btn")
-        clear_btn.connect("clicked", self._on_clear_all_clicked)
-        top_row.pack_end(clear_btn, False, False, 0)
+        # Botão de ação contextual: "Limpar tudo" no Histórico, "+ Novo item" nas abas
+        self.action_btn = Gtk.Button(label="Limpar tudo")
+        self.action_btn.get_style_context().add_class("clear-btn")
+        self.action_btn.connect("clicked", self._on_action_clicked)
+        top_row.pack_end(self.action_btn, False, False, 0)
+
+        self.status_label = Gtk.Label(label="")
+        self.status_label.get_style_context().add_class("status-label")
+        top_row.pack_end(self.status_label, False, False, 0)
         header_box.pack_start(top_row, False, False, 0)
+
+        # Barra de abas
+        tab_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
+        tab_row.get_style_context().add_class("tab-bar")
+        tabs_scroller = Gtk.ScrolledWindow()
+        tabs_scroller.set_policy(Gtk.PolicyType.EXTERNAL, Gtk.PolicyType.NEVER)
+        tabs_scroller.set_propagate_natural_height(True)
+        self.tabs_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
+        tabs_scroller.add(self.tabs_box)
+        tab_row.pack_start(tabs_scroller, True, True, 0)
+
+        self.add_tab_btn = self._make_icon_button(["list-add-symbolic"], "+")
+        self.add_tab_btn.set_tooltip_text("Nova aba")
+        self.add_tab_btn.connect("clicked", lambda b: self._show_create_tab_popover())
+        tab_row.pack_end(self.add_tab_btn, False, False, 0)
+        header_box.pack_start(tab_row, False, False, 0)
 
         self.search_entry = Gtk.Entry()
         self.search_entry.set_placeholder_text("Pesquisar no histórico...")
@@ -205,13 +333,343 @@ class ClipboardFlyoutWindow(Gtk.Window):
         self.scroller.add(self.cards_box)
         root_box.pack_start(self.scroller, True, True, 0)
 
-    def _on_clear_all_clicked(self, widget):
-        self.storage.clear_unpinned()
-        self.refresh_items()
+        self._rebuild_tab_bar()
 
+    # ------------------------------------------------------------------ abas
+    def _tab_order(self) -> List[Optional[str]]:
+        return [HISTORY_TAB] + [t.id for t in self.tabs.list_tabs()]
+
+    def _rebuild_tab_bar(self):
+        for child in self.tabs_box.get_children():
+            self.tabs_box.remove(child)
+
+        entries = [(HISTORY_TAB, "Histórico", None)]
+        for t in self.tabs.list_tabs():
+            icon = None
+            if t.encrypted:
+                icon = "changes-prevent-symbolic" if t.locked else "changes-allow-symbolic"
+            entries.append((t.id, t.name, icon))
+
+        for tab_id, name, icon in entries:
+            btn = Gtk.Button()
+            btn.set_relief(Gtk.ReliefStyle.NONE)
+            btn.get_style_context().add_class("tab-btn")
+            if tab_id == self.active_tab:
+                btn.get_style_context().add_class("tab-active")
+            inner = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+            if icon:
+                inner.pack_start(Gtk.Image.new_from_icon_name(icon, Gtk.IconSize.MENU), False, False, 0)
+            label = Gtk.Label(label=name)
+            label.set_ellipsize(Pango.EllipsizeMode.END)
+            label.set_max_width_chars(14)
+            inner.pack_start(label, False, False, 0)
+            btn.add(inner)
+            btn.connect("clicked", lambda b, tid=tab_id: self.switch_tab(tid))
+            if tab_id is not HISTORY_TAB:
+                btn.set_tooltip_text(f"{name} — clique direito para opções")
+                btn.connect("button-press-event", self._on_tab_button_press, tab_id)
+            self.tabs_box.pack_start(btn, False, False, 0)
+        self.tabs_box.show_all()
+
+    def switch_tab(self, tab_id: Optional[str]):
+        if tab_id is not HISTORY_TAB and tab_id not in self._tab_order():
+            tab_id = HISTORY_TAB
+        self.active_tab = tab_id
+        if tab_id is not HISTORY_TAB:
+            self.tabs.touch(tab_id)
+        self._update_header()
+        self._rebuild_tab_bar()
+        if self.search_entry.get_text():
+            self.search_entry.set_text("")  # dispara refresh via "changed"
+        else:
+            self.refresh_items()
+        self.search_entry.grab_focus()
+
+    def on_tabs_changed(self):
+        """Chamado pelo daemon quando o estado das abas muda (ex.: auto-lock)."""
+        if self.get_visible():
+            self._rebuild_tab_bar()
+            self.refresh_items()
+
+    def _active_tab_info(self):
+        for t in self.tabs.list_tabs():
+            if t.id == self.active_tab:
+                return t
+        return None
+
+    def _update_header(self):
+        if self.active_tab is HISTORY_TAB:
+            self.action_btn.set_label("Limpar tudo")
+            self.action_btn.set_sensitive(True)
+            self.search_entry.set_placeholder_text("Pesquisar no histórico...")
+            return
+        info = self._active_tab_info()
+        name = info.name if info else "aba"
+        self.action_btn.set_label("+ Novo item")
+        self.action_btn.set_sensitive(not (info and info.locked))
+        self.search_entry.set_placeholder_text(f"Pesquisar em {name}...")
+
+    def _on_action_clicked(self, widget):
+        if self.active_tab is HISTORY_TAB:
+            self.storage.clear_unpinned()
+            self.refresh_items()
+        else:
+            self._show_new_item_popover()
+
+    def _flash_status(self, text: str):
+        """Mostra uma mensagem curta de confirmação no cabeçalho."""
+        self.status_label.set_text(text)
+        if self._status_timer:
+            GLib.source_remove(self._status_timer)
+
+        def _clear():
+            self.status_label.set_text("")
+            self._status_timer = None
+            return False
+
+        self._status_timer = GLib.timeout_add(1500, _clear)
+
+    # ------------------------------------------------------------------ popovers
+    def _popup(self, popover: Gtk.Popover, focus_widget: Optional[Gtk.Widget] = None):
+        if self._open_popover:
+            self._open_popover.popdown()
+        self._open_popover = popover
+
+        def _on_closed(p):
+            if self._open_popover is p:
+                self._open_popover = None
+
+        popover.connect("closed", _on_closed)
+        popover.get_child().show_all()
+        popover.popup()
+        if focus_widget:
+            GLib.idle_add(lambda: (focus_widget.grab_focus(), False)[1])
+
+    def _new_popover(self, relative_to: Gtk.Widget, title: str):
+        pop = Gtk.Popover.new(relative_to)
+        pop.set_position(Gtk.PositionType.BOTTOM)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.get_style_context().add_class("popover-box")
+        title_lbl = Gtk.Label(label=title)
+        title_lbl.set_xalign(0.0)
+        title_lbl.get_style_context().add_class("popover-title")
+        box.pack_start(title_lbl, False, False, 0)
+        pop.add(box)
+        return pop, box
+
+    def _make_entry(self, placeholder: str, text: str = "") -> Gtk.Entry:
+        entry = Gtk.Entry()
+        entry.set_placeholder_text(placeholder)
+        entry.set_text(text)
+        entry.get_style_context().add_class("search-entry")
+        entry.set_width_chars(24)
+        return entry
+
+    def _make_menu_button(self, label: str, callback, danger: bool = False) -> Gtk.Button:
+        btn = Gtk.Button(label=label)
+        btn.set_relief(Gtk.ReliefStyle.NONE)
+        btn.get_style_context().add_class("menu-btn")
+        if danger:
+            btn.get_style_context().add_class("danger-btn")
+        btn.get_child().set_xalign(0.0)
+        btn.connect("clicked", lambda b: callback())
+        return btn
+
+    def _show_create_tab_popover(self):
+        pop, box = self._new_popover(self.add_tab_btn, "Nova aba")
+        entry = self._make_entry("Nome da aba")
+        box.pack_start(entry, False, False, 0)
+
+        # Checkbox Cofre
+        check = Gtk.CheckButton(label="Proteger com senha (Cofre 🔒)")
+        check.get_style_context().add_class("checkbox-label")
+        box.pack_start(check, False, False, 0)
+
+        pwd_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        pwd_box.set_no_show_all(True)
+        pwd_box.hide()
+
+        pwd_entry = self._make_entry("Senha do cofre")
+        pwd_entry.set_visibility(False)
+        pwd_entry.set_property("caps-lock-warning", True)
+
+        pwd_conf = self._make_entry("Confirmar senha")
+        pwd_conf.set_visibility(False)
+        pwd_conf.set_property("caps-lock-warning", True)
+
+        pwd_box.pack_start(pwd_entry, False, False, 0)
+        pwd_box.pack_start(pwd_conf, False, False, 0)
+        box.pack_start(pwd_box, False, False, 0)
+
+        def _on_toggle_check(btn):
+            if btn.get_active():
+                pwd_box.show_all()
+            else:
+                pwd_box.hide()
+
+        check.connect("toggled", _on_toggle_check)
+
+        error = Gtk.Label(label="")
+        error.get_style_context().add_class("error-label")
+        error.set_xalign(0.0)
+        box.pack_start(error, False, False, 0)
+
+        def _create():
+            name = entry.get_text().strip()
+            password = None
+            if check.get_active():
+                p1 = pwd_entry.get_text()
+                p2 = pwd_conf.get_text()
+                if not p1:
+                    error.set_text("A senha não pode ser vazia")
+                    return
+                if p1 != p2:
+                    error.set_text("As senhas não coincidem")
+                    return
+                password = p1
+
+            try:
+                tab_id = self.tabs.create_tab(name, password=password)
+            except (TabError, ValueError) as e:
+                error.set_text(str(e))
+                return
+            pop.popdown()
+            self.switch_tab(tab_id)
+
+        entry.connect("activate", lambda e: _create())
+        pwd_entry.connect("activate", lambda e: _create())
+        pwd_conf.connect("activate", lambda e: _create())
+
+        box.pack_start(self._make_menu_button("Criar aba", _create), False, False, 0)
+        self._popup(pop, entry)
+
+    def _on_tab_button_press(self, btn, event, tab_id):
+        if event.type == Gdk.EventType.BUTTON_PRESS and event.button == 3:
+            self._show_tab_menu(btn, tab_id)
+            return True
+        return False
+
+    def _show_tab_menu(self, btn: Gtk.Widget, tab_id: str):
+        info = next((t for t in self.tabs.list_tabs() if t.id == tab_id), None)
+        if not info:
+            return
+        pop, box = self._new_popover(btn, info.name)
+
+        def _rename_mode():
+            for child in box.get_children()[1:]:
+                box.remove(child)
+            entry = self._make_entry("Novo nome", info.name)
+
+            def _apply():
+                try:
+                    self.tabs.rename_tab(tab_id, entry.get_text())
+                except TabError:
+                    return
+                pop.popdown()
+                self._rebuild_tab_bar()
+                self._update_header()
+
+            entry.connect("activate", lambda e: _apply())
+            box.pack_start(entry, False, False, 0)
+            box.pack_start(self._make_menu_button("Salvar", _apply), False, False, 0)
+            box.show_all()
+            entry.grab_focus()
+
+        def _delete_confirm():
+            for child in box.get_children()[1:]:
+                box.remove(child)
+            warn = Gtk.Label(label="Excluir a aba e todos os seus itens?")
+            warn.get_style_context().add_class("error-label")
+            box.pack_start(warn, False, False, 0)
+
+            def _delete():
+                self.tabs.delete_tab(tab_id)
+                pop.popdown()
+                self.switch_tab(HISTORY_TAB if self.active_tab == tab_id else self.active_tab)
+
+            box.pack_start(self._make_menu_button("Excluir definitivamente", _delete, danger=True), False, False, 0)
+            box.pack_start(self._make_menu_button("Cancelar", pop.popdown), False, False, 0)
+            box.show_all()
+
+        if info.encrypted:
+            if not info.locked:
+                def _lock_now():
+                    self.tabs.lock(tab_id)
+                    pop.popdown()
+                    self._rebuild_tab_bar()
+                    self._update_header()
+                    self.refresh_items()
+                    self._flash_status("Cofre trancado")
+
+                box.pack_start(self._make_menu_button("Trancar cofre agora (Ctrl+L)", _lock_now), False, False, 0)
+
+        box.pack_start(self._make_menu_button("Renomear", _rename_mode), False, False, 0)
+        box.pack_start(self._make_menu_button("Excluir aba", _delete_confirm, danger=True), False, False, 0)
+        self._popup(pop)
+
+    def _show_new_item_popover(self):
+        tab_id = self.active_tab
+        pop, box = self._new_popover(self.action_btn, "Novo item")
+        sc = Gtk.ScrolledWindow()
+        sc.set_size_request(300, 110)
+        sc.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        view = Gtk.TextView()
+        view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        view.set_left_margin(6)
+        view.set_top_margin(4)
+        sc.add(view)
+        box.pack_start(sc, True, True, 0)
+
+        def _from_clipboard():
+            text = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).wait_for_text()
+            if text:
+                view.get_buffer().set_text(text)
+
+        def _save():
+            buf = view.get_buffer()
+            text = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), True)
+            try:
+                if self.tabs.add_text(tab_id, text):
+                    pop.popdown()
+                    self.refresh_items()
+                    self._flash_status("Item salvo")
+            except TabError as e:
+                self._flash_status(str(e))
+
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        row.pack_start(self._make_menu_button("Usar clipboard atual", _from_clipboard), False, False, 0)
+        row.pack_end(self._make_menu_button("Salvar", _save), False, False, 0)
+        box.pack_start(row, False, False, 0)
+        self._popup(pop, view)
+
+    def _show_send_popover(self, btn: Gtk.Widget, item: ClipboardItem):
+        pop, box = self._new_popover(btn, "Enviar para aba")
+        tabs = self.tabs.list_tabs()
+        if not tabs:
+            hint = Gtk.Label(label="Nenhuma aba criada.\nUse o + ao lado das abas.")
+            hint.get_style_context().add_class("meta-label")
+            hint.set_xalign(0.0)
+            box.pack_start(hint, False, False, 0)
+
+        for t in tabs:
+            def _send(t=t):
+                try:
+                    self.tabs.add_item(t.id, item)
+                    self._flash_status(f"Enviado para {t.name}")
+                except TabError as e:
+                    self._flash_status(str(e))
+                pop.popdown()
+
+            b = self._make_menu_button(t.name, _send)
+            if t.locked:
+                b.set_sensitive(False)
+                b.set_tooltip_text("Destranque a aba primeiro")
+            box.pack_start(b, False, False, 0)
+        self._popup(pop)
+
+    # ------------------------------------------------------------------ busca
     def _on_search_changed(self, entry):
-        query = entry.get_text().strip()
-        self.refresh_items(search_query=query)
+        self.refresh_items()
 
     def _on_search_activate(self, entry):
         """Ao pressionar Enter na busca, cola o primeiro item filtrado imediatamente."""
@@ -225,7 +683,40 @@ class ClipboardFlyoutWindow(Gtk.Window):
 
     def _on_key_press(self, widget, event):
         if event.keyval == Gdk.KEY_Escape:
+            # Esc fecha primeiro o popover aberto; só depois o flyout
+            if self._open_popover:
+                self._open_popover.popdown()
+                return True
             self.hide()
+            return True
+
+        mods = event.state & Gtk.accelerator_get_default_mod_mask()
+        order = self._tab_order()
+
+        # Ctrl+L: trancar cofre atual se for cofre destrancado
+        if mods == Gdk.ModifierType.CONTROL_MASK and event.keyval in (Gdk.KEY_l, Gdk.KEY_L):
+            if self.active_tab is not HISTORY_TAB:
+                info = self._active_tab_info()
+                if info and info.encrypted and not info.locked:
+                    self.tabs.lock(self.active_tab)
+                    self._rebuild_tab_bar()
+                    self._update_header()
+                    self.refresh_items()
+                    self._flash_status("Cofre trancado")
+                    return True
+
+        # Alt+1..9: salta direto para a aba N (1 = Histórico)
+        if mods == Gdk.ModifierType.MOD1_MASK and Gdk.KEY_1 <= event.keyval <= Gdk.KEY_9:
+            idx = event.keyval - Gdk.KEY_1
+            if idx < len(order):
+                self.switch_tab(order[idx])
+            return True
+
+        # Ctrl+PgUp / Ctrl+PgDn: aba anterior / próxima (circular)
+        if mods == Gdk.ModifierType.CONTROL_MASK and event.keyval in (Gdk.KEY_Page_Up, Gdk.KEY_Page_Down):
+            step = 1 if event.keyval == Gdk.KEY_Page_Down else -1
+            cur = order.index(self.active_tab) if self.active_tab in order else 0
+            self.switch_tab(order[(cur + step) % len(order)])
             return True
         return False
 
@@ -279,6 +770,10 @@ class ClipboardFlyoutWindow(Gtk.Window):
         self.target_wm_class = target_wm_class
         self._can_close_on_focus_out = False
 
+        # Sempre abre na aba Histórico (comportamento padrão do Win+V)
+        self.active_tab = HISTORY_TAB
+        self._update_header()
+        self._rebuild_tab_bar()
         self.search_entry.set_text("")
         self.refresh_items()
         self.position_at_pointer()
@@ -319,18 +814,39 @@ class ClipboardFlyoutWindow(Gtk.Window):
 
         GLib.timeout_add(40, _refocus)
 
-    def refresh_items(self, search_query: str = ""):
-        """Recria os cards da lista com base nos itens do storage."""
+    def refresh_items(self, search_query: Optional[str] = None):
+        """Recria os cards da lista com base nos itens da aba ativa."""
+        if search_query is None:
+            search_query = self.search_entry.get_text().strip()
+
         # Limpa cards existentes
         for child in self.cards_box.get_children():
             self.cards_box.remove(child)
 
-        self._current_items = self.storage.get_all_items(search_query)
+        empty_text = "Nenhum item no histórico"
+        if self.active_tab is HISTORY_TAB:
+            self._current_items = self.storage.get_all_items(search_query)
+        else:
+            try:
+                if self.tabs.is_locked(self.active_tab):
+                    self._current_items = []
+                    self._render_unlock_view(self.active_tab)
+                    return
+                else:
+                    self._current_items = self.tabs.get_items(self.active_tab, search_query)
+                    empty_text = "Aba vazia — use \"+ Novo item\" ou envie\nitens a partir do Histórico"
+            except TabError:
+                # A aba deixou de existir: volta para o Histórico
+                self.active_tab = HISTORY_TAB
+                self._update_header()
+                self._rebuild_tab_bar()
+                self._current_items = self.storage.get_all_items(search_query)
 
         if not self._current_items:
             empty_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
             empty_box.set_margin_top(40)
-            empty_label = Gtk.Label(label="Nenhum item no histórico")
+            empty_label = Gtk.Label(label=empty_text)
+            empty_label.set_justify(Gtk.Justification.CENTER)
             empty_label.get_style_context().add_class("meta-label")
             empty_box.pack_start(empty_label, True, True, 0)
             self.cards_box.pack_start(empty_box, True, True, 0)
@@ -346,6 +862,66 @@ class ClipboardFlyoutWindow(Gtk.Window):
                 print(f"[UI] Erro ao renderizar card {item.id}: {e}")
 
         self.cards_box.show_all()
+
+    def _render_unlock_view(self, tab_id: str):
+        """Renderiza a interface de desbloqueio de cofre com foco na senha."""
+        info = self._active_tab_info()
+        tab_name = info.name if info else "Cofre"
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        box.get_style_context().add_class("unlock-box")
+        box.set_halign(Gtk.Align.CENTER)
+
+        icon = Gtk.Image.new_from_icon_name("dialog-password-symbolic", Gtk.IconSize.DIALOG)
+        box.pack_start(icon, False, False, 0)
+
+        title = Gtk.Label(label=f"Cofre: {tab_name}")
+        title.get_style_context().add_class("unlock-title")
+        box.pack_start(title, False, False, 0)
+
+        subtitle = Gtk.Label(label="Digite a senha para descriptografar os itens")
+        subtitle.get_style_context().add_class("unlock-subtitle")
+        box.pack_start(subtitle, False, False, 0)
+
+        pwd_entry = Gtk.Entry()
+        pwd_entry.set_placeholder_text("Senha do cofre...")
+        pwd_entry.set_visibility(False)
+        pwd_entry.set_property("caps-lock-warning", True)
+        pwd_entry.get_style_context().add_class("search-entry")
+        pwd_entry.set_width_chars(22)
+        box.pack_start(pwd_entry, False, False, 0)
+
+        err_label = Gtk.Label(label="")
+        err_label.get_style_context().add_class("error-label")
+        box.pack_start(err_label, False, False, 0)
+
+        def _do_unlock():
+            pw = pwd_entry.get_text()
+            if not pw:
+                err_label.set_text("Digite a senha")
+                return
+            try:
+                self.tabs.unlock(tab_id, pw)
+                self._update_header()
+                self._rebuild_tab_bar()
+                self.refresh_items()
+                self._flash_status("Cofre destrancado")
+            except InvalidPassword:
+                err_label.set_text("Senha incorreta!")
+                pwd_entry.set_text("")
+                pwd_entry.grab_focus()
+            except Exception as ex:
+                err_label.set_text(f"Erro: {ex}")
+
+        unlock_btn = Gtk.Button(label="Desbloquear")
+        unlock_btn.get_style_context().add_class("primary-btn")
+        unlock_btn.connect("clicked", lambda b: _do_unlock())
+        pwd_entry.connect("activate", lambda e: _do_unlock())
+        box.pack_start(unlock_btn, False, False, 0)
+
+        self.cards_box.pack_start(box, True, True, 0)
+        self.cards_box.show_all()
+        GLib.idle_add(pwd_entry.grab_focus)
 
     def _create_card(self, item: ClipboardItem) -> Gtk.Widget:
         event_box = Gtk.EventBox()
@@ -406,7 +982,16 @@ class ClipboardFlyoutWindow(Gtk.Window):
             pin_btn.get_style_context().add_class("pinned")
         pin_btn.set_tooltip_text("Desafixar" if item.is_pinned else "Fixar item")
         pin_btn.connect("clicked", lambda b, i=item: self._on_toggle_pin(i))
-        meta_row.pack_end(pin_btn, False, False, 0)
+        if self.active_tab is HISTORY_TAB:
+            meta_row.pack_end(pin_btn, False, False, 0)
+
+            # Botão Enviar para aba
+            send_btn = self._make_icon_button(
+                ["mail-send-symbolic", "document-send-symbolic", "go-next-symbolic"], "→"
+            )
+            send_btn.set_tooltip_text("Enviar para aba...")
+            send_btn.connect("clicked", lambda b, i=item: self._show_send_popover(b, i))
+            meta_row.pack_end(send_btn, False, False, 0)
 
         # Botão Delete
         del_btn = self._make_icon_button(
@@ -446,7 +1031,13 @@ class ClipboardFlyoutWindow(Gtk.Window):
         self.refresh_items()
 
     def _on_delete_item(self, item: ClipboardItem):
-        self.storage.delete_item(item.id)
+        if self.active_tab is HISTORY_TAB:
+            self.storage.delete_item(item.id)
+        else:
+            try:
+                self.tabs.delete_item(self.active_tab, item.id)
+            except TabError as e:
+                self._flash_status(str(e))
         self.refresh_items()
 
     def _on_card_clicked(self, event, item: ClipboardItem):
@@ -458,16 +1049,38 @@ class ClipboardFlyoutWindow(Gtk.Window):
     def execute_paste(self, item: ClipboardItem):
         """
         Fluxo de injeção de colagem equivalente ao Windows:
-        1. Atualiza o clipboard e marca a flag anti-loop.
-        2. Fecha o flyout.
-        3. Restaura o foco na janela alvo.
-        4. Aguarda 25ms e injeta Ctrl+V (ou Ctrl+Shift+V se for terminal).
+        1. Se for item confidencial de Cofre, guarda o clipboard anterior para restauração em 1.5s.
+        2. Atualiza o clipboard e marca a flag anti-loop.
+        3. Fecha o flyout.
+        4. Restaura o foco na janela alvo.
+        5. Aguarda 25ms e injeta Ctrl+V (ou Ctrl+Shift+V se for terminal).
+        6. Se for cofre, restaura o clipboard anterior após 1.5s (Anti-Leak).
         """
+        # Identifica se é originário de um cofre
+        is_vault = False
+        if self.active_tab is not HISTORY_TAB:
+            info = self._active_tab_info()
+            if info and info.encrypted:
+                is_vault = True
+        else:
+            found = self.tabs.find_item(item.id)
+            if found and found[2]:
+                is_vault = True
+
+        clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+        prev_text: Optional[str] = None
+        prev_image: Optional[GdkPixbuf.Pixbuf] = None
+
+        if is_vault:
+            # Captura snapshot prévio do clipboard para restauração posterior
+            prev_text = clipboard.wait_for_text()
+            if not prev_text:
+                prev_image = clipboard.wait_for_image()
+
         # 1. Marca flag anti-loop com o hash do item
         self.monitor.mark_internal_paste(item.content_hash)
 
         # Atualiza a seleção do clipboard do sistema
-        clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
         if item.format_type == ClipboardFormat.IMAGE and item.image_bytes:
             try:
                 loader = GdkPixbuf.PixbufLoader.new()
@@ -495,3 +1108,27 @@ class ClipboardFlyoutWindow(Gtk.Window):
             return False
 
         GLib.timeout_add(15, _do_paste)
+
+        # 4. Anti-Leak: Restauração do Clipboard após 1.5 segundos se for item de cofre
+        if is_vault:
+            def _restore_clipboard():
+                if prev_image is not None:
+                    try:
+                        ok, img_bytes = prev_image.save_to_bufferv("png", [], [])
+                        if ok:
+                            img_hash = ClipboardItem(format_type=ClipboardFormat.IMAGE, image_bytes=img_bytes).content_hash
+                            self.monitor.mark_internal_paste(img_hash)
+                        clipboard.set_image(prev_image)
+                        clipboard.store()
+                    except Exception as ex:
+                        print(f"[UI] Erro ao restaurar imagem anterior: {ex}")
+                elif prev_text is not None and prev_text:
+                    txt_hash = ClipboardItem(format_type=ClipboardFormat.TEXT, text_content=prev_text).content_hash
+                    self.monitor.mark_internal_paste(txt_hash)
+                    clipboard.set_text(prev_text, -1)
+                    clipboard.store()
+                else:
+                    clipboard.clear()
+                return False
+
+            GLib.timeout_add(1500, _restore_clipboard)

@@ -20,6 +20,7 @@ USER_HOME = Path.home()
 BASE_DATA_DIR = USER_HOME / ".local" / "share" / "winv-clipboard"
 PINNED_DIR = BASE_DATA_DIR / "Pinned"
 PINNED_METADATA_FILE = PINNED_DIR / "metadata.json"
+TABS_DIR = BASE_DATA_DIR / "Tabs"
 
 # Socket IPC para acionamento instantâneo via Super+V
 UID = os.getuid() if hasattr(os, "getuid") else 1000
