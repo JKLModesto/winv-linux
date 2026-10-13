@@ -50,14 +50,34 @@ Agora basta pressionar **`Super + V`** (a tecla Windows + V) em qualquer lugar d
 
 ---
 
+## 🗂️ Abas Persistentes e Abas Cofre (Criptografia AES-256-GCM + Scrypt)
+
+Além do histórico padrão de 25 itens em RAM, o `winv-linux` permite criar **Abas Personalizadas**:
+
+* **Abas Normais:** Ideais para comandos CLI frequentes, respostas prontas ou anotações de trabalho. Todos os itens adicionados são persistidos em disco (`~/.local/share/winv-clipboard/Tabs/`) e sobrevivem a reinicializações.
+* **Abas Cofre (🔒 Protegidas por Senha):**
+  * **Criptografia Forte em Disco:** Protegidas com derivação de chave via **Scrypt** (`memory-hard`, defensivo contra GPUs) e cifra autenticada **AES-256-GCM** com AAD vinculado ao ID da aba.
+  * **Zero Plaintext:** Textos, previews e imagens são gravados em um único arquivo cifrado (`vault.enc`).
+  * **Zero Memory Leak:** A chave fica em memória mutável e é zerada com `zero-fill` ao trancar.
+  * **Auto-Lock por Inatividade:** Após 5 minutos sem uso, o cofre é trancado automaticamente na RAM.
+  * **Auto-Restore Anti-Leak (1.5s):** Ao colar credenciais ou tokens de uma aba cofre, o `winv-linux` injeta a colagem no app de destino e, **1.5s depois, restaura o clipboard com o conteúdo público anterior** (ou limpa a área de transferência), impedindo que a senha permaneça exposta ao `Ctrl+V` acidental ou a leituras externas.
+
+---
+
 ## ⌨️ Atalhos e Interação
 
 * **`Super + V`**: Abre ou fecha o histórico na posição exata do cursor.
+* **`Alt + 1, 2, ... 9`**: Alterna instantaneamente entre as abas (1 = Histórico, 2..9 = Abas customizadas).
+* **`Ctrl + PageUp / PageDown`**: Navega ciclicamente entre as abas.
+* **`Ctrl + L`**: Tranca a aba cofre atual imediatamente.
 * **Clique ou `Enter`**: Cola o item selecionado diretamente na janela em que você estava trabalhando.
-* **`Esc` ou Clicar Fora**: Fecha a janela instantaneamente.
-* **📌 (Fixar / Desafixar)**: Torna o item permanente, persistindo-o mesmo após reiniciar o sistema.
-* **🗑️ (Excluir)**: Remove o item selecionado.
-* **"Limpar tudo"**: Esvazia o histórico volátil (RAM), preservando com segurança todos os seus itens fixados.
+* **`Esc`**: Fecha o popover aberto ou o flyout.
+* **`→` (Enviar para aba)**: No Histórico, copia um item diretamente para qualquer aba criada.
+* **`+ Novo item`**: Permite adicionar um snippet ou texto livre (ou colar o clipboard atual) direto na aba ativa.
+* **Clique direito na aba**: Permite renomear, trancar ou excluir a aba.
+* **`◇ / ◆` (Fixar / Desafixar)**: Torna o item permanente no Histórico (Pinned).
+* **`✕` (Excluir)**: Remove o item selecionado.
+* **"Limpar tudo"**: Esvazia o histórico volátil (RAM), preservando todos os itens fixados.
 
 ---
 
@@ -90,18 +110,25 @@ winv-linux/
 ├── winv/
 │   ├── __init__.py
 │   ├── config.py                 # Constantes e limites espelhados do Windows
+│   ├── crypto.py                 # Criptografia de cofres (Scrypt + AES-256-GCM)
+│   ├── tabs.py                   # Gerenciador de abas persistentes e cofres
 │   ├── models.py                 # Modelos de dados e serialização de formatos
 │   ├── storage.py                # Armazenamento híbrido (RAM FIFO + Disco Pinned)
 │   ├── monitor.py                # Monitor de clipboard com filtro anti-loop
-│   ├── x11_helper.py             # Captura de XID, foco e injeção do auto-paste
-│   ├── ui.py                     # Flyout em GTK3 estilizado em Dark Mode
+│   ├── ui/                       # Flyout modular em GTK3 (Dark Mode Fluent)
+│   │   ├── window.py             # Janela Flyout, posicionamento X11 e foco
+│   │   ├── tabs_bar.py           # Barra de abas, Kanban drag-and-drop e scroll
+│   │   ├── cards.py              # Renderização dos cards, miniaturas e colagem
+│   │   ├── popovers.py           # Menus, criação de abas e desbloqueio de cofre
+│   │   ├── styles.py             # Folhas de estilo CSS
+│   │   └── constants.py          # Constantes da interface
 │   ├── ipc.py                    # Unix Domain Socket (< 10ms de latência)
 │   └── daemon.py                 # Orquestrador do processo em background
 ├── bin/
-│   └── winv-linux                 # Script executável CLI
+│   └── winv-linux                # Script executável CLI
 ├── systemd/
-│   └── winv-linux.service         # Definição do serviço do usuário systemd
-├── install.sh               # Instalador universal (Mint, Ubuntu, Zorin...)
+│   └── winv-linux.service        # Definição do serviço do usuário systemd
+├── install.sh                    # Instalador universal (Mint, Ubuntu, Zorin...)
 └── README.md                     # Este documento
 ```
 

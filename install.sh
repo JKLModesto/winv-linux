@@ -160,7 +160,7 @@ migrate_legacy
 
 # 1. Dependências
 echo -e "\n${BLUE}[1/5] Verificando dependências (APT)...${NC}"
-REQUIRED_PKGS=(python3 python3-gi gir1.2-gtk-3.0 gir1.2-wnck-3.0 xdotool x11-utils python3-xlib dconf-cli)
+REQUIRED_PKGS=(python3 python3-gi gir1.2-gtk-3.0 gir1.2-wnck-3.0 xdotool x11-utils python3-xlib python3-cryptography dconf-cli)
 MISSING_PKGS=()
 for pkg in "${REQUIRED_PKGS[@]}"; do
     dpkg -s "$pkg" >/dev/null 2>&1 || MISSING_PKGS+=("$pkg")

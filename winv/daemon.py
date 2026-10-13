@@ -9,12 +9,15 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, GLib
 
-from .config import ensure_directories
+from .config import ensure_directories, TABS_DIR
 from .storage import HybridStorage
+from .tabs import TabManager
 from .x11_helper import X11Helper
 from .monitor import ClipboardMonitor
 from .ui import ClipboardFlyoutWindow
 from .ipc import IPCServer
+
+AUTOLOCK_CHECK_INTERVAL_SEC = 30
 
 class WinVDaemon:
     def __init__(self):
@@ -22,6 +25,7 @@ class WinVDaemon:
 
         print("[Daemon] Inicializando subsistemas winv-linux...")
         self.storage = HybridStorage()
+        self.tabs = TabManager(TABS_DIR)
         self.x11_helper = X11Helper()
 
         # Instancia a janela de UI pré-carregada (em estado oculto)
@@ -35,11 +39,21 @@ class WinVDaemon:
         self.flyout = ClipboardFlyoutWindow(
             storage=self.storage,
             x11_helper=self.x11_helper,
-            monitor=self.monitor
+            monitor=self.monitor,
+            tabs=self.tabs
         )
+
+        # Verificação periódica de auto-lock das Abas Cofre
+        GLib.timeout_add_seconds(AUTOLOCK_CHECK_INTERVAL_SEC, self._autolock_tick)
 
         # Inicia o servidor IPC de disparo rápido
         self.ipc_server = IPCServer(on_command_callback=self._handle_ipc_command)
+
+    def _autolock_tick(self):
+        if self.tabs.check_autolock():
+            print("[Daemon] Auto-lock: aba(s) cofre trancada(s) por inatividade.")
+            self.flyout.on_tabs_changed()
+        return True
 
     def _on_item_added(self, item):
         """Callback acionado quando um novo item entra no histórico."""
