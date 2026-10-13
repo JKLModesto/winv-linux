@@ -33,12 +33,16 @@ if [ "$1" == "--uninstall" ]; then
     echo -e "${YELLOW}[2/4] Removendo atalho de teclado no Cinnamon...${NC}"
     CURRENT_LIST=$(gsettings get org.cinnamon.desktop.keybindings custom-list)
     UPDATED_LIST=$(python3 -c "
-import ast
-lst = ast.literal_eval('$CURRENT_LIST')
+import sys, ast
+raw = sys.argv[1].strip()
+try:
+    lst = [] if raw.startswith('@as') else ast.literal_eval(raw)
+except Exception:
+    lst = []
 if 'custom-winv' in lst:
     lst.remove('custom-winv')
 print(str(lst))
-")
+" "$CURRENT_LIST")
     gsettings set org.cinnamon.desktop.keybindings custom-list "$UPDATED_LIST"
     dconf reset -f /org/cinnamon/desktop/keybindings/custom-keybindings/custom-winv/ 2>/dev/null || true
 
@@ -109,15 +113,16 @@ echo -e "\n${BLUE}[4/5] Registrando atalho global Super+V no Cinnamon...${NC}"
 CURRENT_LIST=$(gsettings get org.cinnamon.desktop.keybindings custom-list)
 
 NEW_LIST=$(python3 -c "
-import ast
+import sys, ast
+raw = sys.argv[1].strip()
 try:
-    lst = ast.literal_eval('$CURRENT_LIST')
+    lst = [] if raw.startswith('@as') else ast.literal_eval(raw)
 except Exception:
     lst = []
 if 'custom-winv' not in lst:
     lst.append('custom-winv')
 print(str(lst))
-")
+" "$CURRENT_LIST")
 
 gsettings set org.cinnamon.desktop.keybindings custom-list "$NEW_LIST"
 

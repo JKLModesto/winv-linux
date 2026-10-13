@@ -10,11 +10,12 @@ import os
 import subprocess
 from pathlib import Path
 
-# Adiciona o diretório raiz ao PYTHONPATH para permitir imports do pacote winv
+# Adiciona o diretório raiz ou de instalação ao sys.path para permitir imports do pacote winv
 CURRENT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = CURRENT_DIR.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+for candidate in [PROJECT_ROOT, Path.home() / ".local" / "share" / "winv-mint"]:
+    if (candidate / "winv").is_dir() and str(candidate) not in sys.path:
+        sys.path.insert(0, str(candidate))
 
 from winv.ipc import send_command
 from winv.daemon import main as run_daemon

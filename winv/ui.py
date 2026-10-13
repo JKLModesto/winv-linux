@@ -90,7 +90,6 @@ window.winv-popup {
 .card-text {
     font-size: 12px;
     color: #f0f0f0;
-    line-height: 1.35;
 }
 
 .meta-label {

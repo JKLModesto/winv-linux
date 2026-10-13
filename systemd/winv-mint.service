@@ -10,6 +10,7 @@ ExecStart=%h/.local/bin/winv-mint --daemon
 Restart=on-failure
 RestartSec=2s
 Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=%h/.local/share/winv-mint
 
 [Install]
 WantedBy=default.target
