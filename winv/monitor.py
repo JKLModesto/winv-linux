@@ -32,6 +32,9 @@ class ClipboardMonitor:
         # Conecta ao sinal nativo de alteração de proprietário do X11
         self.clipboard.connect("owner-change", self._on_clipboard_owner_change)
 
+        # Captura o item que já estiver no clipboard na inicialização
+        GLib.idle_add(self._process_clipboard_content)
+
     def mark_internal_paste(self, content_hash: str):
         """
         Registra a flag de colagem interna (ExcludeClipboardContentFromMonitorProcessing).
@@ -83,16 +86,19 @@ class ClipboardMonitor:
 
                 # Tenta capturar HTML complementar
                 html_content = None
-                targets = self.clipboard.wait_for_targets()
-                if targets:
-                    target_names = [target.name() for target in targets[1]]
-                    if "text/html" in target_names:
-                        html_atom = Gdk.Atom.intern("text/html", False)
-                        selection_data = self.clipboard.wait_for_contents(html_atom)
-                        if selection_data:
-                            html_bytes = selection_data.get_data()
-                            if html_bytes:
-                                html_content = html_bytes.decode("utf-8", errors="ignore")
+                try:
+                    res = self.clipboard.wait_for_targets()
+                    if res and res[0] and res[1]:
+                        target_names = [target.name() for target in res[1] if hasattr(target, "name")]
+                        if "text/html" in target_names:
+                            html_atom = Gdk.Atom.intern("text/html", False)
+                            selection_data = self.clipboard.wait_for_contents(html_atom)
+                            if selection_data:
+                                html_bytes = selection_data.get_data()
+                                if html_bytes:
+                                    html_content = html_bytes.decode("utf-8", errors="ignore")
+                except Exception:
+                    pass
 
                 item = ClipboardItem(
                     format_type=ClipboardFormat.HTML if html_content else ClipboardFormat.TEXT,

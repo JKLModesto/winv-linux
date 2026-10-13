@@ -110,26 +110,37 @@ echo -e "${GREEN}Serviço winv-mint iniciado com sucesso!${NC}"
 
 # 4. Registro Automático do Atalho Global Super+V no Cinnamon
 echo -e "\n${BLUE}[4/5] Registrando atalho global Super+V no Cinnamon...${NC}"
+
+# Define os dados do atalho PRIMEIRO, antes de registrar na lista do Cinnamon.
+# Isso evita uma condição de corrida no Cinnamon, onde o evento 'changed::custom-list'
+# era disparado antes de 'command' ser gravado, gerando notificação de comando vazio.
+KEY_SCHEMA="org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom-winv/"
+gsettings set "$KEY_SCHEMA" name "Histórico da Área de Transferência (Win+V)"
+gsettings set "$KEY_SCHEMA" command "$BIN_DIR/winv-mint --popup"
+gsettings set "$KEY_SCHEMA" binding "['<Super>v']"
+
 CURRENT_LIST=$(gsettings get org.cinnamon.desktop.keybindings custom-list)
 
-NEW_LIST=$(python3 -c "
-import sys, ast
+# Registra e força o Cinnamon a recarregar o atalho
+python3 -c "
+import sys, ast, subprocess, time
+
+schema = 'org.cinnamon.desktop.keybindings'
+key = 'custom-list'
 raw = sys.argv[1].strip()
 try:
     lst = [] if raw.startswith('@as') else ast.literal_eval(raw)
 except Exception:
     lst = []
-if 'custom-winv' not in lst:
-    lst.append('custom-winv')
-print(str(lst))
-" "$CURRENT_LIST")
 
-gsettings set org.cinnamon.desktop.keybindings custom-list "$NEW_LIST"
+if 'custom-winv' in lst:
+    lst.remove('custom-winv')
+    subprocess.run(['gsettings', 'set', schema, key, str(lst)], check=True)
+    time.sleep(0.2)
 
-KEY_SCHEMA="org.cinnamon.desktop.keybindings.custom-keybinding:/org/cinnamon/desktop/keybindings/custom-keybindings/custom-winv/"
-gsettings set "$KEY_SCHEMA" name "Histórico da Área de Transferência (Win+V)"
-gsettings set "$KEY_SCHEMA" command "$BIN_DIR/winv-mint --popup"
-gsettings set "$KEY_SCHEMA" binding "['<Super>v']"
+lst.append('custom-winv')
+subprocess.run(['gsettings', 'set', schema, key, str(lst)], check=True)
+" "$CURRENT_LIST"
 
 echo -e "${GREEN}Atalho Super+V registrado no Cinnamon com sucesso!${NC}"
 

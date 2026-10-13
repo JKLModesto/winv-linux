@@ -9,7 +9,7 @@ import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("GdkPixbuf", "2.0")
-from gi.repository import Gtk, Gdk, GdkPixbuf, GLib, Gio
+from gi.repository import Gtk, Gdk, GdkPixbuf, GLib, Gio, Pango
 
 from .config import (
     POPUP_WIDTH,
@@ -291,8 +291,12 @@ class ClipboardFlyoutWindow(Gtk.Window):
             return
 
         for item in self._current_items:
-            card = self._create_card(item)
-            self.cards_box.pack_start(card, False, False, 0)
+            try:
+                card = self._create_card(item)
+                if card:
+                    self.cards_box.pack_start(card, False, False, 0)
+            except Exception as e:
+                print(f"[UI] Erro ao renderizar card {item.id}: {e}")
 
         self.cards_box.show_all()
 
@@ -308,7 +312,7 @@ class ClipboardFlyoutWindow(Gtk.Window):
         # Conteúdo do Card
         if item.format_type == ClipboardFormat.IMAGE and item.image_bytes:
             try:
-                loader = GdkPixbuf.PixbufLoader.new_with_type("png")
+                loader = GdkPixbuf.PixbufLoader.new()
                 loader.write(item.image_bytes)
                 loader.close()
                 pixbuf = loader.get_pixbuf()
@@ -317,21 +321,22 @@ class ClipboardFlyoutWindow(Gtk.Window):
                     orig_w = pixbuf.get_width()
                     orig_h = pixbuf.get_height()
                     scale = min(THUMBNAIL_MAX_WIDTH / orig_w, THUMBNAIL_MAX_HEIGHT / orig_h, 1.0)
-                    scaled_w = int(orig_w * scale)
-                    scaled_h = int(orig_h * scale)
+                    scaled_w = max(1, int(orig_w * scale))
+                    scaled_h = max(1, int(orig_h * scale))
                     scaled_pixbuf = pixbuf.scale_simple(scaled_w, scaled_h, GdkPixbuf.InterpType.BILINEAR)
 
                     image_widget = Gtk.Image.new_from_pixbuf(scaled_pixbuf)
-                    image_widget.set_xalign(0.0)
+                    image_widget.set_halign(Gtk.Align.START)
                     card_box.pack_start(image_widget, False, False, 0)
             except Exception as e:
                 err_label = Gtk.Label(label=f"[Imagem indisponível: {e}]")
+                err_label.set_halign(Gtk.Align.START)
                 card_box.pack_start(err_label, False, False, 0)
         else:
             text_preview = item.get_display_text()
             label = Gtk.Label(label=text_preview)
             label.set_line_wrap(True)
-            label.set_line_wrap_mode(3)  # PANGO_WRAP_WORD_CHAR
+            label.set_line_wrap_mode(Pango.WrapMode.WORD_CHAR)
             label.set_max_width_chars(44)
             label.set_xalign(0.0)
             label.get_style_context().add_class("card-text")
@@ -399,7 +404,7 @@ class ClipboardFlyoutWindow(Gtk.Window):
         clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
         if item.format_type == ClipboardFormat.IMAGE and item.image_bytes:
             try:
-                loader = GdkPixbuf.PixbufLoader.new_with_type("png")
+                loader = GdkPixbuf.PixbufLoader.new()
                 loader.write(item.image_bytes)
                 loader.close()
                 pixbuf = loader.get_pixbuf()
