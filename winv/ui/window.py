@@ -4,6 +4,7 @@ Combina os mixins de abas (TabBarMixin), cards (CardsMixin) e popovers (Popovers
 """
 
 import subprocess
+from pathlib import Path
 from typing import List, Optional
 import gi
 gi.require_version("Gtk", "3.0")
@@ -73,6 +74,22 @@ class ClipboardFlyoutWindow(Gtk.Window, TabBarMixin, CardsMixin, PopoversMixin):
         self.set_default_size(POPUP_WIDTH, POPUP_MAX_HEIGHT)
         self.set_name("winv-popup")
         self.get_style_context().add_class("winv-popup")
+
+        # Configura o ícone oficial da janela
+        self.set_icon_name("winv-linux")
+        for icon_path in [
+            Path("/usr/share/pixmaps/winv-linux.png"),
+            Path("/usr/share/icons/hicolor/512x512/apps/winv-linux.png"),
+            Path(__file__).resolve().parent.parent.parent / "winv-linux.png",
+            Path.home() / ".local/share/icons/hicolor/512x512/apps/winv-linux.png",
+            Path.home() / ".local/share/pixmaps/winv-linux.png",
+        ]:
+            if icon_path.is_file():
+                try:
+                    self.set_icon_from_file(str(icon_path))
+                    break
+                except Exception:
+                    pass
 
         # Habilita suporte a transparência RGBA
         screen = self.get_screen()

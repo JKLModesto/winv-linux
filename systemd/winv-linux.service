@@ -1,6 +1,6 @@
 [Unit]
 Description=winv-linux - Windows Win+V Clipboard History Daemon for Linux
-Documentation=https://github.com/pedro/winv-linux
+Documentation=https://github.com/JKLModesto/winv-linux
 
 [Service]
 Type=simple

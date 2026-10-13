@@ -174,12 +174,52 @@ else
 fi
 
 # 2. Arquivos
-echo -e "\n${BLUE}[2/5] Copiando arquivos...${NC}"
+echo -e "\n${BLUE}[2/5] Copiando arquivos e instalando ícone oficial...${NC}"
 mkdir -p "$INSTALL_DIR" "$BIN_DIR"
 rm -rf "$INSTALL_DIR/winv"
 cp -r "$SCRIPT_DIR/winv" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/bin/winv-linux" "$BIN_DIR/winv-linux"
 chmod +x "$BIN_DIR/winv-linux"
+
+# Ícone oficial nos formatos freedesktop do usuário
+mkdir -p "$HOME/.local/share/pixmaps"
+cp "$SCRIPT_DIR/winv-linux.png" "$HOME/.local/share/pixmaps/winv-linux.png"
+
+python3 -c "
+import gi
+gi.require_version('GdkPixbuf', '2.0')
+from gi.repository import GdkPixbuf
+import os
+src = '$SCRIPT_DIR/winv-linux.png'
+pix = GdkPixbuf.Pixbuf.new_from_file(src)
+sizes = [16, 24, 32, 48, 64, 128, 256, 512]
+base_dir = os.path.expanduser('~/.local/share/icons/hicolor')
+for s in sizes:
+    dest_dir = f'{base_dir}/{s}x{s}/apps'
+    os.makedirs(dest_dir, exist_ok=True)
+    scaled = pix.scale_simple(s, s, GdkPixbuf.InterpType.BILINEAR)
+    scaled.savev(f'{dest_dir}/winv-linux.png', 'png', [], [])
+"
+
+# Lançador .desktop do usuário
+mkdir -p "$HOME/.local/share/applications"
+cat <<EOF > "$HOME/.local/share/applications/winv-linux.desktop"
+[Desktop Entry]
+Name=Área de Transferência (Win+V)
+Comment=Histórico de Área de Transferência nativo do Windows para Linux
+Exec=$BIN_DIR/winv-linux
+Icon=winv-linux
+Terminal=false
+Type=Application
+Categories=Utility;System;
+StartupNotify=false
+EOF
+chmod 644 "$HOME/.local/share/applications/winv-linux.desktop"
+
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -q -t -f "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+fi
+
 # Garante ~/.local/bin no PATH para bash, zsh e logins gráficos
 for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
     if [ -f "$rc" ] && ! grep -qE '^[^#]*\.local/bin' "$rc"; then
@@ -200,9 +240,7 @@ echo -e "${GREEN}Serviço iniciado!${NC}"
 
 # 4. Atalho
 echo -e "\n${BLUE}[4/5] Registrando atalho Super+V ($DE)...${NC}"
-if register_shortcut; then
-    echo -e "${GREEN}Atalho Super+V registrado!${NC}"
-fi
+"$BIN_DIR/winv-linux" --setup-shortcut || register_shortcut
 
 # 5. Validação
 echo -e "\n${BLUE}[5/5] Validando daemon...${NC}"

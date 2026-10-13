@@ -55,13 +55,37 @@ WantedBy=default.target
 EOF
 chmod 644 "${BUILD_DIR}/usr/lib/systemd/user/winv-linux.service"
 
+# Ícone oficial nos formatos freedesktop (hicolor e pixmaps)
+mkdir -p "${BUILD_DIR}/usr/share/pixmaps"
+cp winv-linux.png "${BUILD_DIR}/usr/share/pixmaps/winv-linux.png"
+chmod 644 "${BUILD_DIR}/usr/share/pixmaps/winv-linux.png"
+
+# Gera as variantes hicolor para excelente nitidez em todas as resoluções
+python3 -c "
+import gi
+gi.require_version('GdkPixbuf', '2.0')
+from gi.repository import GdkPixbuf
+import os
+
+src = 'winv-linux.png'
+pix = GdkPixbuf.Pixbuf.new_from_file(src)
+sizes = [16, 24, 32, 48, 64, 128, 256, 512]
+base_dir = '${BUILD_DIR}/usr/share/icons/hicolor'
+
+for s in sizes:
+    dest_dir = f'{base_dir}/{s}x{s}/apps'
+    os.makedirs(dest_dir, exist_ok=True)
+    scaled = pix.scale_simple(s, s, GdkPixbuf.InterpType.BILINEAR)
+    scaled.savev(f'{dest_dir}/winv-linux.png', 'png', [], [])
+"
+
 # Atalho no menu do sistema (.desktop)
 cat <<EOF > "${BUILD_DIR}/usr/share/applications/winv-linux.desktop"
 [Desktop Entry]
 Name=Área de Transferência (Win+V)
 Comment=Histórico de Área de Transferência nativo do Windows para Linux
 Exec=/usr/bin/winv-linux
-Icon=edit-paste
+Icon=winv-linux
 Terminal=false
 Type=Application
 Categories=Utility;System;
@@ -163,6 +187,12 @@ if command -v loginctl >/dev/null 2>&1; then
             fi
         fi
     done
+# 4. Atualiza cache de ícones e base de dados desktop
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+fi
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database -q /usr/share/applications 2>/dev/null || true
 fi
 
 echo ""
@@ -192,6 +222,22 @@ systemctl --global disable winv-linux.service 2>/dev/null || true
 exit 0
 EOF
 chmod 755 "${BUILD_DIR}/DEBIAN/prerm"
+
+cat <<'EOF' > "${BUILD_DIR}/DEBIAN/postrm"
+#!/bin/bash
+set -e
+
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+    fi
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database -q /usr/share/applications 2>/dev/null || true
+    fi
+fi
+exit 0
+EOF
+chmod 755 "${BUILD_DIR}/DEBIAN/postrm"
 
 # Ajusta permissões gerais de arquivos e pastas
 find "${BUILD_DIR}/usr" -type d -exec chmod 755 {} +

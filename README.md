@@ -1,10 +1,17 @@
-# 📋 winv-linux: Windows `Win + V` Clipboard Experience for Linux
+<div align="center">
+
+<img src="winv-linux.png" alt="winv-linux logo" width="160" />
+
+# winv-linux
+### Experiência Nativa do Windows `Win + V` para Linux
 
 [![Versão](https://img.shields.io/badge/vers%C3%A3o-1.0.0-blue.svg?style=flat-square)](https://github.com/JKLModesto/winv-linux/releases)
 [![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green.svg?style=flat-square)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.8%2B-yellow.svg?style=flat-square)](https://www.python.org/)
 [![Status dos Testes](https://img.shields.io/badge/testes-31%20passando-brightgreen.svg?style=flat-square)]()
 [![Desenvolvedor](https://img.shields.io/badge/desenvolvido%20por-Pedro%20Modesto-orange.svg?style=flat-square)](https://github.com/JKLModesto)
+
+</div>
 
 > **Português:** Implementação nativa, de altíssima performance (<10ms) e sem concessões da experiência completa do **Histórico da Área de Transferência do Windows (`Win + V`)** para sistemas Linux X11, construída a partir de engenharia reversa detalhada dos binários oficiais do Windows (`cbdhsvc.dll` e `SuggestionUIUndocked.dll`).
 >
