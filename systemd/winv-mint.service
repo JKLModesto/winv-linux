@@ -1,0 +1,15 @@
+[Unit]
+Description=winv-mint - Windows Win+V Clipboard History Daemon for Linux Mint
+Documentation=https://github.com/pedro/winv-mint
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/winv-mint --daemon
+Restart=on-failure
+RestartSec=2s
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
