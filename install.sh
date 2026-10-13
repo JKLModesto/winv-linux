@@ -180,9 +180,12 @@ rm -rf "$INSTALL_DIR/winv"
 cp -r "$SCRIPT_DIR/winv" "$INSTALL_DIR/"
 cp "$SCRIPT_DIR/bin/winv-linux" "$BIN_DIR/winv-linux"
 chmod +x "$BIN_DIR/winv-linux"
-if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]] && ! grep -q '.local/bin' "$HOME/.bashrc"; then
-    echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
-fi
+# Garante ~/.local/bin no PATH para bash, zsh e logins gráficos
+for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
+    if [ -f "$rc" ] && ! grep -qE '^[^#]*\.local/bin' "$rc"; then
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$rc"
+    fi
+done
 
 # 3. Serviço systemd
 echo -e "\n${BLUE}[3/5] Configurando serviço systemd do usuário...${NC}"
