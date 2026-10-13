@@ -115,8 +115,13 @@ winv-linux/
 │   ├── models.py                 # Modelos de dados e serialização de formatos
 │   ├── storage.py                # Armazenamento híbrido (RAM FIFO + Disco Pinned)
 │   ├── monitor.py                # Monitor de clipboard com filtro anti-loop
-│   ├── x11_helper.py             # Captura de XID, foco e injeção do auto-paste
-│   ├── ui.py                     # Flyout em GTK3 estilizado em Dark Mode
+│   ├── ui/                       # Flyout modular em GTK3 (Dark Mode Fluent)
+│   │   ├── window.py             # Janela Flyout, posicionamento X11 e foco
+│   │   ├── tabs_bar.py           # Barra de abas, Kanban drag-and-drop e scroll
+│   │   ├── cards.py              # Renderização dos cards, miniaturas e colagem
+│   │   ├── popovers.py           # Menus, criação de abas e desbloqueio de cofre
+│   │   ├── styles.py             # Folhas de estilo CSS
+│   │   └── constants.py          # Constantes da interface
 │   ├── ipc.py                    # Unix Domain Socket (< 10ms de latência)
 │   └── daemon.py                 # Orquestrador do processo em background
 ├── bin/
