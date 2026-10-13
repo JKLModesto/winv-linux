@@ -51,12 +51,17 @@ class ClipboardItem:
     @property
     def content_hash(self) -> str:
         """Gera um hash SHA-256 para verificação de duplicidade e controle anti-loop."""
+        # TEXT e HTML compartilham o mesmo "domínio" de hash: o conteúdo visível
+        # é o que importa. Apps como o Chrome publicam text/plain e depois
+        # text/html para a mesma cópia, o que antes gerava itens duplicados.
         hasher = hashlib.sha256()
-        hasher.update(self.format_type.encode("utf-8"))
         if self.format_type == ClipboardFormat.IMAGE and self.image_bytes:
+            hasher.update(b"image:")
             hasher.update(self.image_bytes)
         elif self.text_content:
-            hasher.update(self.text_content.encode("utf-8", errors="ignore"))
+            normalized = self.text_content.replace("\r\n", "\n").replace("\r", "\n").strip()
+            hasher.update(b"text:")
+            hasher.update(normalized.encode("utf-8", errors="ignore"))
         return hasher.hexdigest()
 
     def get_display_text(self, max_chars: int = 240) -> str:

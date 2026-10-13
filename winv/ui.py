@@ -110,7 +110,10 @@ window.winv-popup {
     color: #ffffff;
 }
 .action-btn.pinned {
-    color: #0078d4;
+    color: #ffffff;
+}
+.action-btn image {
+    -gtk-icon-shadow: none;
 }
 """
 
@@ -394,8 +397,11 @@ class ClipboardFlyoutWindow(Gtk.Window):
         meta_row.pack_start(time_label, True, True, 0)
 
         # Botão Pin
-        pin_btn = Gtk.Button(label="📌" if item.is_pinned else "📍")
-        pin_btn.get_style_context().add_class("action-btn")
+        pin_btn = self._make_icon_button(
+            ["view-pin-symbolic", "pin-symbolic", "starred-symbolic"] if item.is_pinned
+            else ["view-pin-symbolic", "pin-symbolic", "non-starred-symbolic"],
+            "◆" if item.is_pinned else "◇",
+        )
         if item.is_pinned:
             pin_btn.get_style_context().add_class("pinned")
         pin_btn.set_tooltip_text("Desafixar" if item.is_pinned else "Fixar item")
@@ -403,8 +409,9 @@ class ClipboardFlyoutWindow(Gtk.Window):
         meta_row.pack_end(pin_btn, False, False, 0)
 
         # Botão Delete
-        del_btn = Gtk.Button(label="🗑️")
-        del_btn.get_style_context().add_class("action-btn")
+        del_btn = self._make_icon_button(
+            ["user-trash-symbolic", "edit-delete-symbolic"], "✕"
+        )
         del_btn.set_tooltip_text("Excluir item")
         del_btn.connect("clicked", lambda b, i=item: self._on_delete_item(i))
         meta_row.pack_end(del_btn, False, False, 0)
@@ -415,6 +422,21 @@ class ClipboardFlyoutWindow(Gtk.Window):
         # Clique no card para colar
         event_box.connect("button-press-event", lambda w, e, i=item: self._on_card_clicked(e, i))
         return event_box
+
+    def _make_icon_button(self, icon_names: List[str], fallback: str) -> Gtk.Button:
+        """Cria um botão com ícone simbólico (monocromático, herda a cor do CSS).
+        Usa o primeiro ícone disponível no tema; se nenhum existir, um glifo de texto."""
+        theme = Gtk.IconTheme.get_default()
+        btn = Gtk.Button()
+        btn.set_relief(Gtk.ReliefStyle.NONE)
+        btn.get_style_context().add_class("action-btn")
+        for name in icon_names:
+            if theme and theme.has_icon(name):
+                btn.set_image(Gtk.Image.new_from_icon_name(name, Gtk.IconSize.MENU))
+                btn.set_always_show_image(True)
+                return btn
+        btn.set_label(fallback)
+        return btn
 
     def _on_toggle_pin(self, item: ClipboardItem):
         if item.is_pinned:
