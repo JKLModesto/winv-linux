@@ -105,27 +105,28 @@ window.winv-popup {
     opacity: 0;
 }
 .tab-btn {
-    background-color: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 6px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
     box-shadow: none;
-    transition: background-color 100ms ease, border-color 100ms ease;
+    transition: border-color 120ms ease, color 120ms ease;
 }
 .tab-btn:hover {
-    background-color: rgba(255, 255, 255, 0.10);
-    border-color: rgba(255, 255, 255, 0.18);
+    background: transparent;
+    border-bottom-color: rgba(255, 255, 255, 0.35);
 }
 .tab-btn.tab-active {
-    background-color: rgba(255, 255, 255, 0.16);
-    border-color: rgba(255, 255, 255, 0.30);
+    background: transparent;
+    border-bottom: 2px solid #ffffff;
 }
 .tab-inner {
-    padding: 5px 12px;
+    padding: 4px 8px 6px 8px;
 }
 .tab-btn label {
     font-size: 11px;
     font-weight: 500;
-    color: #a6a6a6;
+    color: #8c8c8c;
 }
 .tab-btn:hover label {
     color: #ffffff;
@@ -135,26 +136,25 @@ window.winv-popup {
     font-weight: 600;
 }
 .tab-btn image {
-    opacity: 0.75;
+    opacity: 0.70;
 }
 .tab-btn:hover image, .tab-btn.tab-active image {
     opacity: 1.0;
 }
 .tab-btn.tab-dragging {
     opacity: 0.50;
-    background-color: rgba(255, 255, 255, 0.22);
-    border: 1px dashed rgba(255, 255, 255, 0.50);
+    border-bottom: 2px dashed rgba(255, 255, 255, 0.80);
 }
 .tab-bar .action-btn {
-    padding: 5px 10px;
-    border-radius: 6px;
-    background-color: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    color: #a6a6a6;
+    background: transparent;
+    border: none;
+    padding: 4px 6px;
+    border-radius: 4px;
+    color: #8c8c8c;
+    box-shadow: none;
 }
 .tab-bar .action-btn:hover {
-    background-color: rgba(255, 255, 255, 0.10);
-    border-color: rgba(255, 255, 255, 0.20);
+    background-color: rgba(255, 255, 255, 0.08);
     color: #ffffff;
 }
 .status-label {
