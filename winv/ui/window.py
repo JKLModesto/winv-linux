@@ -364,6 +364,9 @@ class ClipboardFlyoutWindow(Gtk.Window, TabBarMixin, CardsMixin, PopoversMixin):
         self.show_all()
         self.present()
 
+        # Garante que a lista sempre comece no topo ao abrir o flyout
+        self._reset_scroll()
+
         # Força o foco de digitação na caixa de busca imediatamente
         self._activate_focus()
 
@@ -406,3 +409,14 @@ class ClipboardFlyoutWindow(Gtk.Window, TabBarMixin, CardsMixin, PopoversMixin):
             return False
 
         GLib.timeout_add(40, _refocus)
+
+    def _reset_scroll(self):
+        """Reposiciona o scroll da lista de cards para o topo."""
+        def _scroll_top():
+            vadj = self.scroller.get_vadjustment()
+            if vadj is not None:
+                vadj.set_value(vadj.get_lower())
+            return False
+
+        _scroll_top()
+        GLib.idle_add(_scroll_top)

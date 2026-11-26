@@ -9,7 +9,7 @@ import getpass
 from pathlib import Path
 
 # Versão do software e metadados de release
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 GITHUB_REPO = "JKLModesto/winv-linux"
 GITHUB_API_RELEASES_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
